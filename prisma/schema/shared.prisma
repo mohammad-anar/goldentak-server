@@ -1,0 +1,21 @@
+model Newsletter {
+  id          String  @id @default(cuid())
+  title       String
+  image       String?
+  description String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("newsletters")
+}
+
+model LegalDocument {
+  id        String   @id @default(cuid())
+  type      String   @unique // e.g., 'PRIVACY_POLICY', 'TERMS_AND_CONDITIONS'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("legal_documents")
+}

@@ -1,0 +1,25 @@
+enum Role {
+  USER
+  ADMIN
+}
+
+enum RaceStatus {
+  UPCOMING
+  LIVE
+  FINISHED
+}
+
+enum Category {
+  SMALL
+  MEDIUM
+  BIG
+  X
+}
+
+enum NotificationType {
+  SYSTEM
+  PREDICTION_READY
+  RACE_STARTING
+  RACE_FINISHED
+  SUBSCRIPTION_EXPIRING
+}

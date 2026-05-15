@@ -1,0 +1,16 @@
+node_modules
+dist
+# .env
+.env.test
+
+/src/generated/prisma
+
+/src/generated/prisma
+
+/src/generated/prisma
+
+/src/generated/prisma
+
+/generated/prisma
+
+/generated/prisma

@@ -1,0 +1,139 @@
+model Horse {
+  id          String  @id @default(cuid())
+  externalId  String? @unique
+  name        String  @unique
+  age         Int?
+  color       String?
+  sex         String?
+  sireName    String? // Father
+  damName     String? // Mother
+  damSireName String? // Mother's Father
+  owner       String?
+  trainer     String?
+
+  // Denormalized stats for fast calculation
+  totalRaces    Int       @default(0)
+  wins          Int       @default(0)
+  seconds       Int       @default(0)
+  thirds        Int       @default(0)
+  fourths       Int       @default(0)
+  totalEarnings Float     @default(0)
+  lastRaceDate  DateTime?
+
+  // Pedigree Stats (Cached from offspring performance)
+  sireWinRate      Float?
+  sirePlaceRate    Float?
+  damWinRate       Float?
+  damPlaceRate     Float?
+  damSireWinRate   Float?
+  damSirePlaceRate Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries RaceEntry[]
+  results RaceResult[]
+
+  @@map("horses")
+}
+
+model Jockey {
+  id         String  @id @default(cuid())
+  externalId String? @unique
+  name       String
+
+  // Career stats
+  totalRides Int @default(0)
+  wins       Int @default(0)
+  seconds    Int @default(0)
+  thirds     Int @default(0)
+  fourths    Int @default(0)
+
+  // Recent form
+  ridesLast30d Int @default(0)
+  winsLast30d  Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries RaceEntry[]
+  results RaceResult[]
+
+  @@map("jockeys")
+}
+
+model Race {
+  id         String     @id @default(cuid())
+  externalId String     @unique
+  name       String?
+  date       DateTime
+  time       String
+  location   String
+  country    String     @default("United Kingdom")
+  trackType  String? // Turf, Sand, Synthetic
+  distance   String?
+  prize      String?
+  status     RaceStatus @default(UPCOMING)
+
+  // Tahmin / Predictions
+  tahmin1X String?
+  riskRate Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries RaceEntry[]
+  results RaceResult[]
+
+  @@map("races")
+}
+
+model RaceEntry {
+  id         String  @id @default(cuid())
+  raceId     String
+  horseId    String
+  jockeyId   String?
+  jockeyName String?
+  weight     Float?
+  draw       Int?
+
+  // Individual Scores
+  horsePower    Float?
+  jockeyPower   Float?
+  fatherPower   Float?
+  motherPower   Float?
+  damSirePower  Float?
+  pedigreePower Float?
+  earningPower  Float?
+  weightEffect  Float?
+
+  // Final Results
+  rawScore        Float?
+  normalizedScore Float?
+  rank            Int?
+  category        Category?
+
+  race   Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  horse  Horse   @relation(fields: [horseId], references: [id], onDelete: Cascade)
+  jockey Jockey? @relation(fields: [jockeyId], references: [id])
+
+  @@unique([raceId, horseId])
+  @@map("race_entries")
+}
+
+model RaceResult {
+  id       String  @id @default(cuid())
+  raceId   String
+  horseId  String
+  jockeyId String?
+  position Int
+  time     String?
+  earnings Float?
+
+  race   Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  horse  Horse   @relation(fields: [horseId], references: [id], onDelete: Cascade)
+  jockey Jockey? @relation(fields: [jockeyId], references: [id])
+
+  @@unique([raceId, horseId])
+  @@map("race_results")
+}

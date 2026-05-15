@@ -1,0 +1,22 @@
+model AlgorithmSettings {
+  id String @id @default("default")
+
+  // Weights (Percentages)
+  horseWeight        Float @default(45.0)
+  jockeyWeight       Float @default(35.0)
+  fatherWeight       Float @default(8.0)
+  motherWeight       Float @default(6.0)
+  damSireWeight      Float @default(2.0)
+  pedigreeWeight     Float @default(5.0)
+  earningsWeight     Float @default(5.0)
+  weightEffectWeight Float @default(10.0)
+
+  // Thresholds for Categorization
+  bigThreshold    Int @default(20)
+  mediumThreshold Int @default(40)
+  smallThreshold  Int @default(60)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("algorithm_settings")
+}
