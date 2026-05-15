@@ -45,36 +45,55 @@ const deviceLogin = async (deviceId: string) => {
   };
 };
 
-const handleSubscriptionPurchase = async (deviceId: string, plan: string, durationDays: number) => {
+const handleSubscriptionPurchase = async (deviceId: string, planId: string, duration: string) => {
+  console.log("Device purchase request:", { deviceId, planId, duration });
   const user = await prisma.user.findUnique({
     where: { deviceId }
   });
 
   if (!user) throw new Error("User not found");
 
+  const planDetail = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
+  if (!planDetail) {
+    console.error("Plan not found for ID:", planId);
+    throw new Error("Plan not found");
+  }
+
+
   const startDate = new Date();
   const endDate = new Date();
-  endDate.setDate(startDate.getDate() + durationDays);
+  
+  const finalDuration = duration?.toUpperCase() || planDetail.duration;
 
-  const subscription = await prisma.subscription.upsert({
+  if (finalDuration === "MONTHLY") {
+    endDate.setMonth(startDate.getMonth() + 1);
+  } else if (finalDuration === "YEARLY") {
+    endDate.setFullYear(startDate.getFullYear() + 1);
+  }
+
+  await prisma.subscription.upsert({
     where: { userId: user.id },
     update: {
-      plan,
+      plan: planDetail.name,
+      planId: planDetail.id,
       startDate,
       endDate,
       isActive: true
     },
     create: {
       userId: user.id,
-      plan,
+      plan: planDetail.name,
+      planId: planDetail.id,
       startDate,
       endDate,
       isActive: true
     }
   });
 
-  return subscription;
+  // Return a fresh token with updated subscription info
+  return await deviceLogin(deviceId);
 };
+
 
 export const DeviceAuthService = {
   deviceLogin,

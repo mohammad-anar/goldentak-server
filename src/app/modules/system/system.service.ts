@@ -1,85 +1,41 @@
 import { prisma } from "../../../helpers/prisma.js";
-import ApiError from "../../../errors/ApiError.js";
-import { getIO } from "../../../helpers/socketHelper.js";
 
-// ─── Get Lockdown Status ──────────────────────────────────────────────────────
-
+// ─── Get Lockdown Status (No-op for now) ──────────────────────────────────────
 const getLockdownStatus = async () => {
-  const state = await prisma.systemState.findUnique({
-    where: { id: 1 },
-  });
   return {
-    isLocked: state?.isLocked ?? false,
-    lastResultUpdate: state?.lastResultUpdate ?? null,
+    isLocked: false,
+    lastResultUpdate: null,
   };
 };
 
-// ─── Enable Lockdown ──────────────────────────────────────────────────────────
-
 const enableLockdown = async () => {
-  const result = await prisma.systemState.upsert({
-    where: { id: 1 },
-    update: { isLocked: true },
-    create: { id: 1, isLocked: true },
-  });
-
-  // Broadcast to all connected clients
-  try {
-    const io = getIO();
-    io.emit("system:lockdown", { locked: true });
-  } catch {
-    // Socket may not be initialized in all environments — ignore
-  }
-
-  return result;
+  return { success: true, message: "Lockdown feature not implemented in this project" };
 };
-
-// ─── Disable Lockdown ─────────────────────────────────────────────────────────
 
 const disableLockdown = async () => {
-  const result = await prisma.systemState.upsert({
-    where: { id: 1 },
-    update: { isLocked: false },
-    create: { id: 1, isLocked: false },
-  });
-
-  try {
-    const io = getIO();
-    io.emit("system:lockdown", { locked: false });
-  } catch {
-    // ignore
-  }
-
-  return result;
+  return { success: true, message: "Lockdown feature not implemented in this project" };
 };
 
-// ─── Update Last Result Update ─────────────────────────────────────────────────
-
 const setLastResultUpdate = async (date: Date) => {
-  return prisma.systemState.upsert({
-    where: { id: 1 },
-    update: { lastResultUpdate: date },
-    create: { id: 1, lastResultUpdate: date },
-  });
+  return { success: true, date };
 }
 
 const getDashboardStats = async () => {
-  const [totalLeagues, totalUsers, totalFighters, newUsersLast30Days] = await Promise.all([
-    prisma.league.count({ where: { deletedAt: null } }),
-    prisma.user.count({ where: { deletedAt: null } }),
-    prisma.fighter.count({ where: { isActive: true } }),
+  const [totalRaces, totalHorses, totalUsers, newUsersLast30Days] = await Promise.all([
+    prisma.race.count(),
+    prisma.horse.count(),
+    prisma.user.count(),
     prisma.user.count({
       where: {
-        deletedAt: null,
         createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
       },
     }),
   ]);
 
   return {
-    totalLeagues,
+    totalRaces,
+    totalHorses,
     totalUsers,
-    totalFighters,
     newUsersLast30Days,
     userGrowthDelta: totalUsers > 0 ? ((newUsersLast30Days / totalUsers) * 100).toFixed(1) + "%" : "0%",
   };
@@ -94,42 +50,29 @@ const getUserActivityChart = async () => {
     const nextDate = new Date(date);
     nextDate.setDate(nextDate.getDate() + 1);
 
-    const [userCount, membershipCount, tradeCount] = await Promise.all([
-      prisma.user.count({
-        where: { createdAt: { gte: date, lt: nextDate } },
-      }),
-      prisma.leagueMember.count({
-        where: { joinedAt: { gte: date, lt: nextDate } },
-      }),
-      prisma.trade.count({
-        where: { createdAt: { gte: date, lt: nextDate } },
-      }),
-    ]);
+    const userCount = await prisma.user.count({
+      where: { createdAt: { gte: date, lt: nextDate } },
+    });
 
     last7Days.push({
       day: date.toLocaleDateString("en-US", { weekday: "short" }),
-      interactions: userCount + membershipCount + tradeCount,
+      interactions: userCount, // Simplify for now
     });
   }
   return last7Days;
 };
 
 const getRecentActivity = async () => {
-  const [users, leagues, trades] = await Promise.all([
+  const [users, races] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       take: 5,
       select: { id: true, name: true, createdAt: true },
     }),
-    prisma.league.findMany({
+    prisma.race.findMany({
       orderBy: { createdAt: "desc" },
       take: 5,
-      include: { manager: { select: { name: true } } },
-    }),
-    prisma.trade.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: { sender: { select: { name: true } } },
+      select: { id: true, location: true, createdAt: true, name: true },
     }),
   ]);
 
@@ -147,27 +90,19 @@ const getRecentActivity = async () => {
   const activities = [
     ...users.map((u) => ({
       id: `u-${u.id}`,
-      userName: u.name,
+      userName: u.name || "Unknown User",
       action: "Joined Platform",
       target: "User Base",
       status: "completed" as const,
       createdAt: u.createdAt,
     })),
-    ...leagues.map((l) => ({
-      id: `l-${l.id}`,
-      userName: l.manager.name,
-      action: "Created League",
-      target: l.name,
+    ...races.map((r) => ({
+      id: `r-${r.id}`,
+      userName: "System",
+      action: "Synced Race",
+      target: r.name || r.location,
       status: "completed" as const,
-      createdAt: l.createdAt,
-    })),
-    ...trades.map((t) => ({
-      id: `t-${t.id}`,
-      userName: t.sender.name,
-      action: "Proposed Trade",
-      target: `Trade #${t.id.slice(-4)}`,
-      status: t.status.toLowerCase() === "pending" ? "pending" as const : "completed" as const,
-      createdAt: t.createdAt,
+      createdAt: r.createdAt,
     })),
   ]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

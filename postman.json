@@ -1,0 +1,896 @@
+{
+	"info": {
+		"_postman_id": "8d39f4e2-f5e1-4c12-9c9a-b8b8b8b8b8b8",
+		"name": "GoldenTak API",
+		"description": "API Collection for GoldenTak Horse Racing Platform",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth (Admin)",
+			"item": [
+				{
+					"name": "Admin Login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@gmail.com\",\n    \"password\": \"admin123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"oldPassword\": \"admin123\",\n    \"newPassword\": \"admin456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@gmail.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/forgot-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"forgot-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@gmail.com\",\n    \"otp\": \"123456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/verify-otp",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"verify-otp"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"password\": \"newSecurePass123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/reset-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"reset-password"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Auth (Device)",
+			"item": [
+				{
+					"name": "Device Login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"deviceId\": \"test-device-uuid\",\n    \"deviceType\": \"android\",\n    \"deviceName\": \"Pixel 6\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/device-login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"device-login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Purchase Subscription",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"packageId\": \"monthly_plan\",\n    \"transactionId\": \"tx_123456\",\n    \"amount\": 9.99\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/purchase-subscription",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"purchase-subscription"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "User Management (Admin)",
+			"item": [
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Races",
+			"item": [
+				{
+					"name": "Get All Races",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/race?status=UPCOMING&location=Ascot&date=2026-05-20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"race"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "UPCOMING"
+								},
+								{
+									"key": "location",
+									"value": "Ascot"
+								},
+								{
+									"key": "date",
+									"value": "2026-05-20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Race Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/race/clabm8v7z000008l2gz6v2gz6",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"race",
+								"clabm8v7z000008l2gz6v2gz6"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Calculate Race Analysis",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/race/clabm8v7z000008l2gz6v2gz6/calculate",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"race",
+								"clabm8v7z000008l2gz6v2gz6",
+								"calculate"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Horses",
+			"item": [
+				{
+					"name": "Search Horses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/horse/search?name=Red",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"horse",
+								"search"
+							],
+							"query": [
+								{
+									"key": "name",
+									"value": "Red"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Horse Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/horse/clabm8v7z000008l2gz6v2gz6",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"horse",
+								"clabm8v7z000008l2gz6v2gz6"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "System & Sync",
+			"item": [
+				{
+					"name": "Sync Races from API",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/sync",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"sync"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Algorithm Settings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/algorithm",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"algorithm"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Algorithm Settings",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"horseWeight\": 50,\n    \"jockeyWeight\": 30,\n    \"bigThreshold\": 25\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/system/algorithm",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"algorithm"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Lockdown Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/system/lockdown",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"lockdown"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Enable Lockdown",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/lockdown/enable",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"lockdown",
+								"enable"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Disable Lockdown",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/lockdown/disable",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"lockdown",
+								"disable"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Dashboard Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Activity Chart",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/activity/chart",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"activity",
+								"chart"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Recent Activity",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/system/activity/recent",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"system",
+								"activity",
+								"recent"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Newsletter",
+			"item": [
+				{
+					"name": "Get All Newsletters",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/newsletter?searchTerm=Derby&page=1&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"newsletter"
+							],
+							"query": [
+								{
+									"key": "searchTerm",
+									"value": "Derby"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Newsletter by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/newsletter/clabm8v7z000008l2gz6v2gz6",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"newsletter",
+								"clabm8v7z000008l2gz6v2gz6"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Newsletter",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/newsletter/clabm8v7z000008l2gz6v2gz6",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"newsletter",
+								"clabm8v7z000008l2gz6v2gz6"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Legal",
+			"item": [
+				{
+					"name": "Get All Legal Docs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/legal",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"legal"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Legal Doc by Type",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/legal/TERMS_AND_CONDITIONS",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"legal",
+								"TERMS_AND_CONDITIONS"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Contact",
+			"item": [
+				{
+					"name": "Send Contact Message",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"John Doe\",\n    \"email\": \"john@example.com\",\n    \"subject\": \"Support Request\",\n    \"message\": \"I have an issue with my subscription.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/contact",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contact"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"item": [
+				{
+					"name": "Get My Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notification",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notification"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Mark All as Read",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notification/mark-all-read",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notification",
+								"mark-all-read"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Mark Single Read",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notification/clabm8v7z000008l2gz6v2gz6/read",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notification",
+								"clabm8v7z000008l2gz6v2gz6",
+								"read"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "your_jwt_token_here",
+			"type": "string"
+		}
+	]
+}

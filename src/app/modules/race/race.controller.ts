@@ -9,7 +9,8 @@ const getAllRaces = async (req: Request, res: Response) => {
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Races fetched successfully",
-      data: result,
+      meta: result.meta,
+      data: result.data,
     });
   } catch (error: any) {
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({

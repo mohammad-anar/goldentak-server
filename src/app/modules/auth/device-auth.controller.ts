@@ -28,8 +28,9 @@ const deviceLogin = async (req: Request, res: Response) => {
 
 const purchaseSubscription = async (req: Request, res: Response) => {
   try {
-    const { deviceId, plan, durationDays } = req.body;
-    const result = await DeviceAuthService.handleSubscriptionPurchase(deviceId, plan, durationDays);
+    const { deviceId, planId, duration } = req.body;
+    const result = await DeviceAuthService.handleSubscriptionPurchase(deviceId, planId, duration);
+
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Subscription updated successfully",

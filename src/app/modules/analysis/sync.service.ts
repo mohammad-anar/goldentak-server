@@ -9,10 +9,15 @@ const prisma = new PrismaClient();
  */
 const syncUpcomingRaces = async () => {
   try {
-    const response = await racingApi.get("/racecards");
-    const racecards = response.data;
+    const response = await racingApi.get("/racecards/free");
+    const racecards = response.data.racecards || response.data; // The Racing API often wraps in a 'racecards' field
+
+    if (racecards.length > 0) {
+      console.log("[Sync] First card sample:", JSON.stringify(racecards[0]).substring(0, 500));
+    }
 
     for (const card of racecards) {
+
       // Map Racing API fields to our Schema
       const raceData = {
         externalId: card.race_id.toString(),
@@ -33,20 +38,25 @@ const syncUpcomingRaces = async () => {
 
       // Sync Entries for this race
       for (const runner of card.runners) {
+        const horseName = runner.horse as string;
+        const horseExternalId = runner.horse_id as string;
+
         const horse = await prisma.horse.upsert({
-          where: { name: runner.name as string } as any, // Racing API usually uses names as primary ID for simple lookups
+          where: { name: horseName },
           update: {
-            age: runner.age,
+            externalId: horseExternalId,
+            age: runner.age ? parseInt(runner.age) : undefined,
             sex: runner.sex,
-            sireName: runner.sire_name,
-            damName: runner.dam_name,
+            sireName: runner.sire,
+            damName: runner.dam,
           },
           create: {
-            name: runner.name as string,
-            age: runner.age,
+            name: horseName,
+            externalId: horseExternalId,
+            age: runner.age ? parseInt(runner.age) : undefined,
             sex: runner.sex,
-            sireName: runner.sire_name,
-            damName: runner.dam_name,
+            sireName: runner.sire,
+            damName: runner.dam,
           },
         });
 
@@ -58,19 +68,20 @@ const syncUpcomingRaces = async () => {
             },
           },
           update: {
-            jockeyName: runner.jockey_name,
-            weight: runner.weight_lbs,
-            draw: runner.draw,
+            jockeyName: runner.jockey,
+            weight: runner.weight_lbs ? parseFloat(runner.weight_lbs) : (runner.weight_kg ? parseFloat(runner.weight_kg) : undefined),
+            draw: runner.barrier ? parseInt(runner.barrier) : (runner.draw ? parseInt(runner.draw) : undefined),
           },
           create: {
             raceId: race.id,
             horseId: horse.id,
-            jockeyName: runner.jockey_name,
-            weight: runner.weight_lbs,
-            draw: runner.draw,
+            jockeyName: runner.jockey,
+            weight: runner.weight_lbs ? parseFloat(runner.weight_lbs) : (runner.weight_kg ? parseFloat(runner.weight_kg) : undefined),
+            draw: runner.barrier ? parseInt(runner.barrier) : (runner.draw ? parseInt(runner.draw) : undefined),
           },
         });
       }
+
 
       // Trigger automatic calculation for this race
       await CalculationService.calculateRaceScores(race.id);

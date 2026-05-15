@@ -23,3 +23,9 @@ enum NotificationType {
   RACE_FINISHED
   SUBSCRIPTION_EXPIRING
 }
+
+enum SubscriptionDuration {
+  MONTHLY
+  YEARLY
+}
+
