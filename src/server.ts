@@ -1,6 +1,7 @@
 import app from "./app.js";
 import config from "./config/index.js";
 import { seedSuperAdmin } from "./db/seedSuperAdmin.js";
+import { initSubscriptionCron } from "./app/cron/subscriptionCron.js";
 // import { seedFighters } from "./db/seedFighters.js";
 // import { startDraftEngine, stopDraftEngine } from "./helpers/draftEngine.js";
 // import { initSocket } from "./helpers/socketHelper.js";
@@ -17,6 +18,8 @@ async function bootstrap() {
   try {
     await seedSuperAdmin();
     // await seedFighters();
+    initSubscriptionCron();
+
 
     server = app.listen(Number(config.port), "0.0.0.0", () => {
       // Initialize Socket.io
