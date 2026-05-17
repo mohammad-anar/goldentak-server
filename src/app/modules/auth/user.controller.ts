@@ -4,11 +4,12 @@ import { UserService } from "./user.service.js";
 
 const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const result = await UserService.getAllUsers();
+    const result = await UserService.getAllUsers(req.query);
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Users fetched successfully",
-      data: result,
+      meta: result.meta,
+      data: result.data,
     });
   } catch (error: any) {
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
