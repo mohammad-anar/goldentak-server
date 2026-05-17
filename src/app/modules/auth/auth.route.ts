@@ -19,6 +19,8 @@ router.post("/reset-password", AdminAuthController.resetPassword);
 
 // Admin User Management
 router.get("/users", auth("ADMIN"), UserController.getAllUsers);
+router.get("/users/:id", auth("ADMIN"), UserController.getUserById);
 router.get("/stats", auth("ADMIN"), UserController.getStats);
+
 
 export const AuthRoutes = router;

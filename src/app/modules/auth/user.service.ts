@@ -99,7 +99,25 @@ const getSubscriptionStats = async () => {
   };
 };
 
+const getUserById = async (id: string) => {
+  return await prisma.user.findUnique({
+    where: { id },
+    include: {
+      subscription: {
+        include: {
+          planDetail: true
+        }
+      },
+      _count: {
+        select: { notifications: true }
+      }
+    }
+  });
+};
+
 export const UserService = {
   getAllUsers,
-  getSubscriptionStats
+  getSubscriptionStats,
+  getUserById,
 };
+

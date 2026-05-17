@@ -35,7 +35,31 @@ const getStats = async (req: Request, res: Response) => {
   }
 };
 
+const getUserById = async (req: Request, res: Response) => {
+  try {
+    const result = await UserService.getUserById(req.params.id);
+    if (!result) {
+      return res.status(StatusCodes.NOT_FOUND).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: "User fetched successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const UserController = {
   getAllUsers,
   getStats,
+  getUserById,
 };
+
