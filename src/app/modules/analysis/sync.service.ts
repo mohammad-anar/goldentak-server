@@ -60,6 +60,22 @@ const syncUpcomingRaces = async () => {
           },
         });
 
+        let jockeyId: string | undefined = undefined;
+        if (runner.jockey && runner.jockey_id) {
+          const jockeyExternalId = runner.jockey_id as string;
+          const jockeyName = runner.jockey as string;
+
+          const jockey = await prisma.jockey.upsert({
+            where: { externalId: jockeyExternalId },
+            update: { name: jockeyName },
+            create: {
+              externalId: jockeyExternalId,
+              name: jockeyName,
+            },
+          });
+          jockeyId = jockey.id;
+        }
+
         await prisma.raceEntry.upsert({
           where: {
             raceId_horseId: {
@@ -69,6 +85,7 @@ const syncUpcomingRaces = async () => {
           },
           update: {
             jockeyName: runner.jockey,
+            jockeyId,
             weight: runner.weight_lbs ? parseFloat(runner.weight_lbs) : (runner.weight_kg ? parseFloat(runner.weight_kg) : undefined),
             draw: runner.barrier ? parseInt(runner.barrier) : (runner.draw ? parseInt(runner.draw) : undefined),
           },
@@ -76,6 +93,7 @@ const syncUpcomingRaces = async () => {
             raceId: race.id,
             horseId: horse.id,
             jockeyName: runner.jockey,
+            jockeyId,
             weight: runner.weight_lbs ? parseFloat(runner.weight_lbs) : (runner.weight_kg ? parseFloat(runner.weight_kg) : undefined),
             draw: runner.barrier ? parseInt(runner.barrier) : (runner.draw ? parseInt(runner.draw) : undefined),
           },

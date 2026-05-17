@@ -7,11 +7,28 @@ const getAllRaces = async (filters: any) => {
   const { date, location, status, ...options } = filters;
   const { page, limit, skip, sortBy, sortOrder } = paginationHelper.calculatePagination(options);
 
-  const where = {
-    ...(date && { date: new Date(date) }),
-    ...(location && { location }),
-    ...(status && { status: status as RaceStatus }),
-  };
+  const where: any = {};
+
+  if (date) {
+    const startDate = new Date(date);
+    startDate.setUTCHours(0, 0, 0, 0);
+    
+    const endDate = new Date(date);
+    endDate.setUTCHours(23, 59, 59, 999);
+
+    where.date = {
+      gte: startDate,
+      lte: endDate,
+    };
+  }
+
+  if (location) {
+    where.location = location;
+  }
+
+  if (status) {
+    where.status = status as RaceStatus;
+  }
 
   const [data, total] = await Promise.all([
     prisma.race.findMany({

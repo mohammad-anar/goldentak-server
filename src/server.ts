@@ -2,6 +2,7 @@ import app from "./app.js";
 import config from "./config/index.js";
 import { seedSuperAdmin } from "./db/seedSuperAdmin.js";
 import { initSubscriptionCron } from "./app/cron/subscriptionCron.js";
+import { initRaceCron } from "./app/cron/raceCron.js";
 // import { seedFighters } from "./db/seedFighters.js";
 // import { startDraftEngine, stopDraftEngine } from "./helpers/draftEngine.js";
 // import { initSocket } from "./helpers/socketHelper.js";
@@ -19,6 +20,7 @@ async function bootstrap() {
     await seedSuperAdmin();
     // await seedFighters();
     initSubscriptionCron();
+    initRaceCron();
 
 
     server = app.listen(Number(config.port), "0.0.0.0", () => {
