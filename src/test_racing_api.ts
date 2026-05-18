@@ -11,7 +11,7 @@ const apiSecret = process.env.RACING_API_SECRET;
 async function testApi() {
   console.log("Testing Racing API with Basic Auth...");
   try {
-    const response = await axios.get(`${RACING_API_BASE_URL}/racecards`, {
+    const response = await axios.get(`${RACING_API_BASE_URL}/racecards/free`, {
       auth: {
         username: apiKey as string,
         password: apiSecret as string
