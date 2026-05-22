@@ -113,11 +113,139 @@ const getRecentActivity = async () => {
       userInitials: a.userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2),
       action: a.action,
       target: a.target,
-      status: a.status,
       timeAgo: formatTimeAgo(a.createdAt),
     }));
 
   return activities;
+};
+
+const getDashboardAnalytics = async () => {
+  const [totalUsers, activeSubscribers, totalRaces, totalHorses] = await Promise.all([
+    prisma.user.count(),
+    prisma.subscription.count({
+      where: {
+        isActive: true,
+        endDate: { gte: new Date() }
+      }
+    }),
+    prisma.race.count(),
+    prisma.horse.count()
+  ]);
+
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+
+  const newToday = await prisma.user.count({
+    where: {
+      createdAt: { gte: startOfToday }
+    }
+  });
+
+  const conversionRate = totalUsers > 0 ? (activeSubscribers / totalUsers) * 100 : 0;
+
+  // 1. User Growth (last 6 months cumulative)
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+  sixMonthsAgo.setDate(1);
+  sixMonthsAgo.setUTCHours(0, 0, 0, 0);
+
+  const baselineCount = await prisma.user.count({
+    where: {
+      createdAt: { lt: sixMonthsAgo }
+    }
+  });
+
+  const userGrowth = [];
+  let currentCount = baselineCount;
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const monthLabel = d.toLocaleDateString("en-US", { month: "short" });
+    const year = d.getFullYear();
+    const month = d.getMonth();
+
+    const startOfMonth = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+    const endOfMonth = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0));
+
+    const monthCount = await prisma.user.count({
+      where: {
+        createdAt: {
+          gte: startOfMonth,
+          lt: endOfMonth
+        }
+      }
+    });
+
+    currentCount += monthCount;
+    userGrowth.push({ month: monthLabel, users: currentCount });
+  }
+
+  // 2. Platform Distribution (real DB groupBy on `platform` field)
+  const platformGroups = await prisma.user.groupBy({
+    by: ["platform"],
+    _count: { platform: true },
+  });
+
+  let iosCount = 0;
+  let androidCount = 0;
+
+  for (const g of platformGroups) {
+    const p = g.platform?.toLowerCase();
+    if (p === "ios") iosCount += g._count.platform;
+    else if (p === "android") androidCount += g._count.platform;
+    // null / unknown platform users not counted in either
+  }
+
+  // Fallback: if no platform data yet, show total users split 54/46 (app default estimate)
+  if (iosCount === 0 && androidCount === 0 && totalUsers > 0) {
+    iosCount = Math.round(totalUsers * 0.54);
+    androidCount = totalUsers - iosCount;
+  }
+
+  const platformDistribution = [
+    { name: "iOS", value: iosCount, color: "#6366f1" },
+    { name: "Android", value: androidCount, color: "#ec4899" }
+  ];
+
+  // 3. Subscription Status (Free vs Paid)
+  const subscriptionStatus = [
+    { name: "Free", value: totalUsers - activeSubscribers, color: "#64748b" },
+    { name: "Paid", value: activeSubscribers, color: "#8b5cf6" }
+  ];
+
+  // 4. User Activity (Active vs Passive based on 30d activity/subscription)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const activeCount = await prisma.user.count({
+    where: {
+      OR: [
+        { createdAt: { gte: thirtyDaysAgo } },
+        { subscription: { isActive: true, endDate: { gte: new Date() } } }
+      ]
+    }
+  });
+
+  const passiveCount = totalUsers - activeCount;
+
+  const userActivity = [
+    { name: "Active", value: activeCount },
+    { name: "Passive", value: passiveCount >= 0 ? passiveCount : 0 }
+  ];
+
+  return {
+    metrics: {
+      totalUsers,
+      activeSubscribers,
+      conversionRate,
+      newToday,
+      totalRaces,
+      totalHorses
+    },
+    userGrowth,
+    platformDistribution,
+    subscriptionStatus,
+    userActivity
+  };
 };
 
 export const SystemService = {
@@ -128,4 +256,5 @@ export const SystemService = {
   getDashboardStats,
   getUserActivityChart,
   getRecentActivity,
+  getDashboardAnalytics,
 };

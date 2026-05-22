@@ -1,9 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../../helpers/prisma.js";
 import { jwtHelper } from "../../../helpers/jwtHelper.js";
 import config from "../../../config/index.js";
 import { Secret } from "jsonwebtoken";
-
-const prisma = new PrismaClient();
 
 const deviceLogin = async (deviceId: string) => {
   // 1. Find or Create User

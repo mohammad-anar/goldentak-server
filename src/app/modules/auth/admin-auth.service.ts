@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../../helpers/prisma.js";
 import { jwtHelper } from "../../../helpers/jwtHelper.js";
 import config from "../../../config/index.js";
 import { Secret } from "jsonwebtoken";
@@ -8,8 +8,6 @@ import { StatusCodes } from "http-status-codes";
 import { emailHelper } from "../../../helpers/emailHelper.js";
 import generateOTP from "../../../helpers/generateOTP.js";
 import redisClient from "../../../helpers/redis.js";
-
-const prisma = new PrismaClient();
 
 const login = async (payload: any) => {
   const { email, password } = payload;

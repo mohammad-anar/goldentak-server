@@ -10,11 +10,13 @@ import notFound from "./app/middlewares/notFound.js";
 
 const app: Application = express();
 
-// Simple request logger for debugging
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
+// Simple request logger for debugging (dev only)
+if (config.node_env === "development") {
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+}
 
 app.use(
   cors({
@@ -23,8 +25,8 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "500mb" }));
-app.use(express.urlencoded({ extended: true, limit: "500mb" }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/uploads", express.static("uploads"));
 
 // ─── Swagger UI ───────────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ if (config.node_env === "development") {
     "/api-docs",
     swaggerUi.serve,
     swaggerUi.setup(swaggerSpec, {
-      customSiteTitle: "Fantasy UFC API Docs",
+      customSiteTitle: "GoldenTak API Docs",
       swaggerOptions: { persistAuthorization: true },
     })
   );

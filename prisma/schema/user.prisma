@@ -9,6 +9,9 @@ model User {
   avatarUrl    String?
   role         Role    @default(USER)
   isVerified   Boolean @default(false)
+  fcmToken     String?
+  platform     String? // "ios" or "android"
+  language     String  @default("en") // "en", "tr", "ar"
 
   subscription Subscription?
 
@@ -69,3 +72,14 @@ model Notification {
   @@index([userId])
   @@map("notifications")
 }
+
+model BroadcastNotification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  recipient String   // "all" | "paid" | "ios" | "android"
+  createdAt DateTime @default(now())
+
+  @@map("broadcast_notifications")
+}
+

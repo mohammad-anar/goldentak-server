@@ -8,6 +8,7 @@ import { NotificationRoutes } from "../modules/notification/notification.route.j
 import { RaceRouter } from "../modules/race/race.route.js";
 import { HorseRouter } from "../modules/horse/horse.route.js";
 import { SubscriptionRouter } from "../modules/subscription/subscription.route.js";
+import { LanguageRouter } from "../modules/language/language.route.js";
 
 const router = express.Router();
 
@@ -21,6 +22,7 @@ const moduleRoutes = [
   { path: "/race", route: RaceRouter },
   { path: "/horse", route: HorseRouter },
   { path: "/subscription", route: SubscriptionRouter },
+  { path: "/language", route: LanguageRouter },
 ];
 
 

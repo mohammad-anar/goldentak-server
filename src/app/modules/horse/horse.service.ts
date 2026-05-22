@@ -1,6 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../../helpers/prisma.js";
 
-const prisma = new PrismaClient();
 
 const searchHorses = async (name: string) => {
   return await prisma.horse.findMany({

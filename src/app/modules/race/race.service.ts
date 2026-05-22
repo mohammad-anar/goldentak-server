@@ -1,7 +1,7 @@
-import { PrismaClient, RaceStatus } from "@prisma/client";
+import { RaceStatus } from "@prisma/client";
+import { prisma } from "../../../helpers/prisma.js";
 import { paginationHelper } from "../../../helpers/paginationHelper.js";
 
-const prisma = new PrismaClient();
 
 const getAllRaces = async (filters: any) => {
   const { date, location, status, ...options } = filters;

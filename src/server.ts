@@ -5,7 +5,8 @@ import { initSubscriptionCron } from "./app/cron/subscriptionCron.js";
 import { initRaceCron } from "./app/cron/raceCron.js";
 // import { seedFighters } from "./db/seedFighters.js";
 // import { startDraftEngine, stopDraftEngine } from "./helpers/draftEngine.js";
-// import { initSocket } from "./helpers/socketHelper.js";
+import { initSocket } from "./helpers/socketHelper.js";
+import { initFirebase } from "./helpers/firebaseHelper.js";
 
 let server: any;
 
@@ -25,7 +26,10 @@ async function bootstrap() {
 
     server = app.listen(Number(config.port), "0.0.0.0", () => {
       // Initialize Socket.io
-      // initSocket(server);
+      initSocket(server);
+
+      // Initialize Firebase Admin SDK
+      initFirebase();
 
       // Start real-time draft heartbeat
       // startDraftEngine();

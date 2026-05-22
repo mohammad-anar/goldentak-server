@@ -63,6 +63,16 @@ const getRecentActivity = catchAsync(async (_req: Request, res: Response) => {
   });
 });
 
+const getDashboardAnalytics = catchAsync(async (_req: Request, res: Response) => {
+  const result = await SystemService.getDashboardAnalytics();
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Dashboard analytics retrieved successfully",
+    data: result,
+  });
+});
+
 export const SystemController = {
   getLockdownStatus,
   enableLockdown,
@@ -70,4 +80,6 @@ export const SystemController = {
   getDashboardStats,
   getUserActivityChart,
   getRecentActivity,
+  getDashboardAnalytics,
 };
+

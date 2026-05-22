@@ -78,6 +78,8 @@ model Race {
   // Tahmin / Predictions
   tahmin1X String?
   riskRate Int?
+  predictionMessage String?
+  hasPredictions    Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -100,18 +102,24 @@ model RaceEntry {
   // Individual Scores
   horsePower    Float?
   jockeyPower   Float?
-  fatherPower   Float?
-  motherPower   Float?
-  damSirePower  Float?
-  pedigreePower Float?
-  earningPower  Float?
-  weightEffect  Float?
 
   // Final Results
-  rawScore        Float?
   normalizedScore Float?
   rank            Int?
   category        Category?
+
+  // AI Prediction Details
+  winProb                  Float?
+  winOddsFair              Float?
+  placeProb                Float?
+  goingSuitabilityScore    Float?
+  distanceSuitabilityScore Float?
+  jockeyFormScore          Float?
+  trainerFormScore         Float?
+  aiSelectionRank          Int?
+  aiConfidence             String?
+  aiConfidenceScore        Float?
+  aiAnalysis               String?   @db.Text
 
   race   Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
   horse  Horse   @relation(fields: [horseId], references: [id], onDelete: Cascade)

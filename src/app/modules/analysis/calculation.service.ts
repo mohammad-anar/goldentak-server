@@ -1,8 +1,25 @@
-import { PrismaClient } from "@prisma/client";
-import * as Utils from "./analysis.utils.js";
-import { SystemSettingsService } from "../system/system.settings.service.js";
+﻿import { prisma } from "../../../helpers/prisma.js";
+import { rapidApi } from "../../config/rapid_api.js";
 
-const prisma = new PrismaClient();
+
+function parseWeight(weightStr: string | null | undefined): number {
+  if (!weightStr) return 0;
+  
+  const numeric = Number(weightStr);
+  if (!isNaN(numeric)) return numeric;
+
+  const parts = weightStr.split("-");
+  if (parts.length === 2) {
+    const stones = parseInt(parts[0], 10);
+    const lbs = parseInt(parts[1], 10);
+    if (!isNaN(stones) && !isNaN(lbs)) {
+      return stones * 14 + lbs;
+    }
+  }
+
+  const parsed = parseFloat(weightStr);
+  return isNaN(parsed) ? 0 : parsed;
+}
 
 /**
  * Main service to calculate scores for a specific race
@@ -10,145 +27,282 @@ const prisma = new PrismaClient();
 const calculateRaceScores = async (raceId: string) => {
   console.log(`[Calc] Starting analysis for race: ${raceId}`);
 
-  // 1. Fetch Algorithm Settings
-  const settings = await SystemSettingsService.getAlgorithmSettings();
-
-  // 2. Fetch Race and its Entries with full stats
+  // 2. Fetch Race
   const race = await prisma.race.findUnique({
-    where: { id: raceId },
-    include: {
-      entries: {
-        include: {
-          horse: true,
-          jockey: true,
-        }
-      }
-    }
+    where: { id: raceId }
   });
 
   if (!race) throw new Error("Race not found");
 
-  const entries = race.entries;
-  if (entries.length === 0) return [];
+  // 3. Fetch race details (with runners/entries) from Rapid API
+  console.log(`[Calc] Fetching race details from Rapid API for external ID: ${race.externalId}`);
+  const detailsResponse = await rapidApi.get(`/races/${race.externalId}`);
+  const apiRace = detailsResponse.data?.data;
+  
+  if (!apiRace) {
+    throw new Error(`Failed to fetch race details from Rapid API for ID ${race.externalId}`);
+  }
 
-  // 3. Calculate Average Weight for the race
-  const weights = entries.map(e => e.weight || 0).filter(w => w > 0);
-  const avgWeight = weights.length > 0 
-    ? weights.reduce((a, b) => a + b, 0) / weights.length 
-    : 0;
+  const apiEntries = apiRace.entries || [];
+  console.log(`[Calc] Synced details. Found ${apiEntries.length} entries.`);
 
-  // 4. Calculate Individual Power Scores
+  // 4. Upsert Horses, Jockeys, and Race Entries
+  for (const entry of apiEntries) {
+    // Upsert Horse
+    let horse = await prisma.horse.findUnique({
+      where: { name: entry.horse_name }
+    });
+
+    if (!horse) {
+      horse = await prisma.horse.create({
+        data: {
+          externalId: entry.horse_id?.toString() || null,
+          name: entry.horse_name,
+          age: entry.horse_age || null,
+          sex: entry.horse_sex || null,
+          sireName: entry.sire || null,
+          damName: entry.dam || null,
+        }
+      });
+    } else if (entry.horse_id && !horse.externalId) {
+      horse = await prisma.horse.update({
+        where: { id: horse.id },
+        data: { externalId: entry.horse_id.toString() }
+      });
+    }
+
+    // Upsert Jockey
+    let jockey = null;
+    if (entry.jockey_name) {
+      jockey = await prisma.jockey.findFirst({
+        where: { name: entry.jockey_name }
+      });
+
+      if (!jockey) {
+        jockey = await prisma.jockey.create({
+          data: {
+            externalId: entry.jockey_id?.toString() || null,
+            name: entry.jockey_name,
+          }
+        });
+      } else if (entry.jockey_id && !jockey.externalId) {
+        jockey = await prisma.jockey.update({
+          where: { id: jockey.id },
+          data: { externalId: entry.jockey_id.toString() }
+        });
+      }
+    }
+
+    // Upsert RaceEntry
+    const parsedWeight = parseWeight(entry.weight);
+    await prisma.raceEntry.upsert({
+      where: {
+        raceId_horseId: {
+          raceId: race.id,
+          horseId: horse.id,
+        }
+      },
+      update: {
+        jockeyId: jockey?.id || null,
+        jockeyName: entry.jockey_name || null,
+        weight: parsedWeight,
+        draw: entry.draw || null,
+      },
+      create: {
+        raceId: race.id,
+        horseId: horse.id,
+        jockeyId: jockey?.id || null,
+        jockeyName: entry.jockey_name || null,
+        weight: parsedWeight,
+        draw: entry.draw || null,
+      }
+    });
+  }
+
+  // 5. Fetch predictions from Rapid API
+  console.log(`[Calc] Fetching predictions from Rapid API for external ID: ${race.externalId}`);
+  const predictionsResponse = await rapidApi.get(`/predictions/race/${race.externalId}`);
+  const predData = predictionsResponse.data;
+
+  // Handle pending prediction status
+  if (predData.status === "pending") {
+    const pendingMsg = predData.message || "Predictions for this race are currently pending.";
+    console.log(`[Calc] Predictions pending: ${pendingMsg}`);
+    
+    await prisma.race.update({
+      where: { id: race.id },
+      data: {
+        predictionMessage: pendingMsg,
+        hasPredictions: false
+      }
+    });
+
+    throw new Error(pendingMsg);
+  }
+
+  // Update race prediction status in DB
+  await prisma.race.update({
+    where: { id: race.id },
+    data: {
+      predictionMessage: null,
+      hasPredictions: true
+    }
+  });
+
+  const apiPredictions = predData.predictions || [];
+  console.log(`[Calc] Predictions fetched. Found ${apiPredictions.length} predictions.`);
+
+  // 6. Fetch all database entries for calculating
+  const dbEntries = await prisma.raceEntry.findMany({
+    where: { raceId: race.id },
+    include: {
+      horse: true,
+      jockey: true,
+    }
+  });
+
   const results = [];
-  for (const entry of entries) {
+
+  for (const entry of dbEntries) {
     const { horse, jockey } = entry;
 
-    // Power Metrics
-    const horsePower = Utils.calculateHorsePower({
-      totalRaces: horse.totalRaces,
-      wins: horse.wins,
-      seconds: horse.seconds,
-      thirds: horse.thirds,
-      fourths: horse.fourths,
-      lastRaceDate: horse.lastRaceDate,
-      recentWins: 0, // Need to implement recent stats tracking
-      recentRaces: 0,
-    });
+    // Find the corresponding prediction record from Rapid API
+    const predItem = apiPredictions.find((p: any) => 
+      (p.horse_id && horse.externalId && p.horse_id.toString() === horse.externalId) ||
+      (p.horse_name && p.horse_name.toLowerCase() === horse.name.toLowerCase())
+    );
 
-    const jockeyPower = Utils.calculateJockeyPower({
-      totalRides: jockey?.totalRides || 0,
-      wins: jockey?.wins || 0,
-      seconds: jockey?.seconds || 0,
-      thirds: jockey?.thirds || 0,
-      fourths: jockey?.fourths || 0,
-      ridesLast30d: jockey?.ridesLast30d || 0,
-      winsLast30d: jockey?.winsLast30d || 0,
-    });
+    let goingScore = 0.5;
+    let distScore = 0.5;
+    let trainScore = 0.5;
+    let jFormScore = 0.5;
 
-    const fatherPower = Utils.calculatePedigreeFactorPower({
-      totalRaces: 100, // Placeholder for aggregation logic
-      wins: horse.sireWinRate ? horse.sireWinRate * 100 : 10,
-      places: horse.sirePlaceRate ? horse.sirePlaceRate * 100 : 35,
-      stakesWinners: 1
-    }, 'SIRE');
+    // AI Prediction Details to store
+    let aiFields: any = {
+      winProb: null,
+      winOddsFair: null,
+      placeProb: null,
+      goingSuitabilityScore: null,
+      distanceSuitabilityScore: null,
+      jockeyFormScore: null,
+      trainerFormScore: null,
+      aiSelectionRank: null,
+      aiConfidence: null,
+      aiConfidenceScore: null,
+      aiAnalysis: null,
+    };
 
-    const motherPower = Utils.calculatePedigreeFactorPower({
-      totalRaces: 50,
-      wins: horse.damWinRate ? horse.damWinRate * 50 : 5,
-      places: horse.damPlaceRate ? horse.damPlaceRate * 50 : 15,
-      stakesWinners: 0
-    }, 'DAM');
+    if (predItem) {
+      goingScore = predItem.going_suitability?.score ?? 0.5;
+      distScore = predItem.distance_suitability?.score ?? 0.5;
+      trainScore = predItem.trainer_form?.score ?? 0.5;
+      jFormScore = predItem.jockey_form?.score ?? 0.5;
 
-    const damSirePower = Utils.calculatePedigreeFactorPower({
-      totalRaces: 100,
-      wins: horse.damSireWinRate ? horse.damSireWinRate * 100 : 10,
-      places: horse.damSirePlaceRate ? horse.damSirePlaceRate * 100 : 35,
-      stakesWinners: 0
-    }, 'DAM_SIRE');
+      aiFields = {
+        winProb: predItem.win?.win_prob ?? null,
+        winOddsFair: predItem.win?.win_odds_fair ?? null,
+        placeProb: predItem.place?.place_prob ?? null,
+        goingSuitabilityScore: goingScore,
+        distanceSuitabilityScore: distScore,
+        jockeyFormScore: jFormScore,
+        trainerFormScore: trainScore,
+        aiSelectionRank: predItem.selection_rank ?? null,
+        aiConfidence: predItem.confidence ?? null,
+        aiConfidenceScore: predItem.confidence_score ?? null,
+        aiAnalysis: predItem.analysis ?? null,
+      };
 
-    const pedigreePower = Number(((fatherPower * 0.5) + (motherPower * 0.3) + (damSirePower * 0.2)).toFixed(4));
-    
-    const earningPower = Utils.calculateEarningPower({
-      totalEarnings: horse.totalEarnings,
-      totalRaces: horse.totalRaces
-    }, race.trackType || 'HANDICAP');
+      // Update Jockey recent form in DB
+      if (jockey && predItem.jockey_form) {
+        await prisma.jockey.update({
+          where: { id: jockey.id },
+          data: {
+            winsLast30d: predItem.jockey_form.recent_wins || 0,
+            ridesLast30d: predItem.jockey_form.recent_runs || 0,
+          }
+        });
+      }
+    }
 
-    const weightEffect = Utils.calculateWeightEffect(entry.weight || 0, avgWeight);
+    // Synthetic horse power: map average going, distance, trainer scores (0.0 to 1.0) to (0.1 to 3.0)
+    const avgHorseScore = (goingScore + distScore + trainScore) / 3;
+    const horsePower = Number((0.1 + avgHorseScore * 2.9).toFixed(4));
 
-    // Final Aggregate Raw Score
-    const rawScore = Utils.aggregateFinalScore({
-      horsePower,
-      jockeyPower,
-      fatherPower,
-      motherPower,
-      damSirePower,
-      pedigreePower,
-      earningPower,
-      weightEffect
-    }, settings);
+    // Synthetic jockey power: map jockey form score (0.0 to 1.0) to (0.2 to 3.0)
+    const jockeyPower = Number((0.2 + jFormScore * 2.8).toFixed(4));
+
+    // Normalized score is win probability * 100
+    const normalizedScore = aiFields.winProb !== null ? Number((aiFields.winProb * 100).toFixed(2)) : 0;
+
+    // Map AI confidence to category
+    let category = null;
+    if (aiFields.aiConfidence) {
+      const confUpper = aiFields.aiConfidence.toUpperCase();
+      if (confUpper === "HIGH") category = "BIG";
+      else if (confUpper === "MEDIUM") category = "MEDIUM";
+      else if (confUpper === "LOW") category = "SMALL";
+    }
 
     results.push({
       id: entry.id,
       horsePower,
       jockeyPower,
-      fatherPower,
-      motherPower,
-      damSirePower,
-      pedigreePower,
-      earningPower,
-      weightEffect,
-      rawScore
+      normalizedScore,
+      category,
+      aiSelectionRank: aiFields.aiSelectionRank,
+      ...aiFields,
     });
   }
 
-  // 5. Normalize and Categorize
-  const processed = Utils.normalizeAndCategorize(results, {
-    big: settings.bigThreshold,
-    medium: settings.mediumThreshold,
-    small: settings.smallThreshold
+  // Determine ranks based on aiSelectionRank or winProb descending
+  results.sort((a, b) => {
+    if (a.aiSelectionRank !== null && b.aiSelectionRank !== null) {
+      return a.aiSelectionRank - b.aiSelectionRank;
+    }
+    if (a.aiSelectionRank !== null) return -1;
+    if (b.aiSelectionRank !== null) return 1;
+    return b.normalizedScore - a.normalizedScore;
   });
 
-  // 6. Update Database
-  for (const p of processed) {
+  // 7. Update Database with final results and raw AI predictions
+  for (let i = 0; i < results.length; i++) {
+    const p = results[i];
+    const rank = p.aiSelectionRank !== null ? p.aiSelectionRank : (i + 1);
+
     await prisma.raceEntry.update({
       where: { id: p.id },
       data: {
         horsePower: p.horsePower,
         jockeyPower: p.jockeyPower,
-        fatherPower: p.fatherPower,
-        motherPower: p.motherPower,
-        damSirePower: p.damSirePower,
-        pedigreePower: p.pedigreePower,
-        earningPower: p.earningPower,
-        weightEffect: p.weightEffect,
-        rawScore: p.rawScore,
         normalizedScore: p.normalizedScore,
         category: p.category,
-        rank: processed.findIndex(x => x.id === p.id) + 1
+        rank: rank,
+        
+        // AI fields
+        winProb: p.winProb,
+        winOddsFair: p.winOddsFair,
+        placeProb: p.placeProb,
+        goingSuitabilityScore: p.goingSuitabilityScore,
+        distanceSuitabilityScore: p.distanceSuitabilityScore,
+        jockeyFormScore: p.jockeyFormScore,
+        trainerFormScore: p.trainerFormScore,
+        aiSelectionRank: p.aiSelectionRank,
+        aiConfidence: p.aiConfidence,
+        aiConfidenceScore: p.aiConfidenceScore,
+        aiAnalysis: p.aiAnalysis,
       }
     });
   }
 
-  return processed;
+  // Return the processed results sorted by rank
+  return await prisma.raceEntry.findMany({
+    where: { raceId: race.id },
+    include: {
+      horse: true,
+      jockey: true,
+    },
+    orderBy: { rank: 'asc' }
+  });
 };
 
 export const CalculationService = {

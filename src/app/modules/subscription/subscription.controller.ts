@@ -54,12 +54,23 @@ const updatePlan = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getSubscriptionOverview = catchAsync(async (req: Request, res: Response) => {
+  const result = await SubscriptionService.getSubscriptionOverview();
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Subscription overview data fetched successfully",
+    data: result,
+  });
+});
+
 export const SubscriptionController = {
   getAllPlans,
   getPlanById,
   createSubscription,
   createPlan,
   updatePlan,
+  getSubscriptionOverview,
 };
 
 

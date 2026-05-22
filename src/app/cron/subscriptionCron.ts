@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../helpers/prisma.js";
 import cron from "node-cron";
-
-const prisma = new PrismaClient();
 
 export const checkExpiredSubscriptions = async () => {
   console.log(`[${new Date().toISOString()}] Running expired subscriptions cron check...`);

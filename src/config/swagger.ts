@@ -58,20 +58,7 @@ const options: swaggerJSDoc.Options = {
             status: { type: "string", enum: ["UPCOMING", "FINISHED", "CANCELLED"] },
           },
         },
-        // ── Algorithm Settings ────────────────────────────────────────────
-        AlgorithmSettings: {
-          type: "object",
-          properties: {
-            horseWeight: { type: "number", example: 45.0 },
-            jockeyWeight: { type: "number", example: 35.0 },
-            fatherWeight: { type: "number", example: 8.0 },
-            motherWeight: { type: "number", example: 6.0 },
-            damSireWeight: { type: "number", example: 2.0 },
-            pedigreeWeight: { type: "number", example: 5.0 },
-            earningsWeight: { type: "number", example: 5.0 },
-            weightEffectWeight: { type: "number", example: 10.0 },
-          },
-        },
+
         // ── Shared ────────────────────────────────────────────────────────
         SuccessResponse: {
           type: "object",
