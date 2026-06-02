@@ -16,6 +16,8 @@ router.get("/stats", auth(Role.ADMIN), SystemController.getDashboardStats);
 router.get("/analytics", auth(Role.ADMIN), SystemController.getDashboardAnalytics);
 router.get("/activity/chart", auth(Role.ADMIN), SystemController.getUserActivityChart);
 router.get("/activity/recent", auth(Role.ADMIN), SystemController.getRecentActivity);
+router.get("/api-stats", auth(Role.ADMIN), SystemController.getApiStats);
+router.get("/race-results-stats", auth(Role.ADMIN), SystemController.getRaceResultsStats);
 
 export const SystemRouter = router;
 

@@ -1,4 +1,4 @@
-﻿import { prisma } from "../../../helpers/prisma.js";
+import { prisma } from "../../../helpers/prisma.js";
 import { rapidApi } from "../../config/rapid_api.js";
 
 
@@ -117,6 +117,60 @@ const calculateRaceScores = async (raceId: string) => {
         draw: entry.draw || null,
       }
     });
+
+    // Upsert RaceResult if finish position exists
+    if (entry.finish_position !== null && entry.finish_position !== undefined) {
+      const pos = parseInt(entry.finish_position, 10);
+      if (!isNaN(pos)) {
+        await prisma.raceResult.upsert({
+          where: {
+            raceId_horseId: {
+              raceId: race.id,
+              horseId: horse.id,
+            }
+          },
+          update: {
+            position: pos,
+            time: apiRace.winning_time || null,
+          },
+          create: {
+            raceId: race.id,
+            horseId: horse.id,
+            jockeyId: jockey?.id || null,
+            position: pos,
+            time: apiRace.winning_time || null,
+          }
+        });
+
+        // Update Horse career statistics based on all results in DB
+        const horseResults = await prisma.raceResult.findMany({ where: { horseId: horse.id } });
+        const wins = horseResults.filter(r => r.position === 1).length;
+        const seconds = horseResults.filter(r => r.position === 2).length;
+        const thirds = horseResults.filter(r => r.position === 3).length;
+        const fourths = horseResults.filter(r => r.position === 4).length;
+        const totalRaces = horseResults.length;
+
+        await prisma.horse.update({
+          where: { id: horse.id },
+          data: { wins, seconds, thirds, fourths, totalRaces }
+        });
+
+        // Also update Jockey career stats if jockey is present
+        if (jockey) {
+          const jockeyResults = await prisma.raceResult.findMany({ where: { jockeyId: jockey.id } });
+          const jWins = jockeyResults.filter(r => r.position === 1).length;
+          const jSeconds = jockeyResults.filter(r => r.position === 2).length;
+          const jThirds = jockeyResults.filter(r => r.position === 3).length;
+          const jFourths = jockeyResults.filter(r => r.position === 4).length;
+          const totalRides = jockeyResults.length;
+
+          await prisma.jockey.update({
+            where: { id: jockey.id },
+            data: { wins: jWins, seconds: jSeconds, thirds: jThirds, fourths: jFourths, totalRides }
+          });
+        }
+      }
+    }
   }
 
   // 5. Fetch predictions from Rapid API

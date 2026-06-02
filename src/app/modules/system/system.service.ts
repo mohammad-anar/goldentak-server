@@ -1,7 +1,17 @@
 import { prisma } from "../../../helpers/prisma.js";
+import * as fs from "fs";
+import * as path from "path";
 
-// ─── Get Lockdown Status (No-op for now) ──────────────────────────────────────
+const getLockdownFilePath = () => path.join(process.cwd(), "lockdown.json");
+
+// ─── Get Lockdown Status (File-backed) ──────────────────────────────────────
 const getLockdownStatus = async () => {
+  try {
+    const filePath = getLockdownFilePath();
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    }
+  } catch (e) {}
   return {
     isLocked: false,
     lastResultUpdate: null,
@@ -9,16 +19,34 @@ const getLockdownStatus = async () => {
 };
 
 const enableLockdown = async () => {
-  return { success: true, message: "Lockdown feature not implemented in this project" };
+  const status = {
+    isLocked: true,
+    lastResultUpdate: new Date(),
+  };
+  fs.writeFileSync(getLockdownFilePath(), JSON.stringify(status, null, 2));
+  return { success: true, message: "Saturday Lockdown ENABLED" };
 };
 
 const disableLockdown = async () => {
-  return { success: true, message: "Lockdown feature not implemented in this project" };
+  const status = {
+    isLocked: false,
+    lastResultUpdate: new Date(),
+  };
+  fs.writeFileSync(getLockdownFilePath(), JSON.stringify(status, null, 2));
+  return { success: true, message: "Lockdown DISABLED" };
 };
 
 const setLastResultUpdate = async (date: Date) => {
+  try {
+    const current = await getLockdownStatus();
+    const status = {
+      ...current,
+      lastResultUpdate: date,
+    };
+    fs.writeFileSync(getLockdownFilePath(), JSON.stringify(status, null, 2));
+  } catch (e) {}
   return { success: true, date };
-}
+};
 
 const getDashboardStats = async () => {
   const [totalRaces, totalHorses, totalUsers, newUsersLast30Days] = await Promise.all([
@@ -248,6 +276,122 @@ const getDashboardAnalytics = async () => {
   };
 };
 
+const getApiStats = async () => {
+  const totalRaces = await prisma.race.count();
+  const totalEntries = await prisma.raceEntry.count();
+  const lastRace = await prisma.race.findFirst({
+    orderBy: { updatedAt: "desc" },
+    select: { updatedAt: true },
+  });
+
+  const apiStatus = process.env.RAPID_API_SECRET_KEY ? "Active" : "Inactive";
+  const lastSyncTime = lastRace ? lastRace.updatedAt : null;
+
+  // Query recently synced races
+  const recentRaces = await prisma.race.findMany({
+    orderBy: { updatedAt: "desc" },
+    take: 5,
+    select: { name: true, location: true, updatedAt: true, entries: { select: { id: true } } },
+  });
+
+  const syncs = recentRaces.map((r) => ({
+    name: r.name || "Race Sync",
+    time: r.updatedAt.toISOString(),
+    result: `${r.location} (${r.entries.length} runners)`
+  }));
+
+  return {
+    metrics: {
+      status: apiStatus,
+      lastSync: lastSyncTime,
+      totalRacesSynced: totalRaces,
+      totalEntriesSynced: totalEntries,
+    },
+    syncs,
+  };
+};
+
+const getRaceResultsStats = async () => {
+  // 1. Fetch finished races
+  const finishedRaces = await prisma.race.findMany({
+    where: { status: "FINISHED" },
+    include: {
+      results: {
+        where: { position: 1 },
+        include: { horse: true, jockey: true },
+      },
+    },
+    orderBy: { date: "desc" },
+    take: 4,
+  });
+
+  const todaysRaces = finishedRaces.map((r) => ({
+    time: r.time,
+    location: r.location,
+    distance: r.distance || "1200m",
+    status: "Completed",
+    winner: r.results[0]?.horse?.name || "N/A",
+    statusVariant: "bg-green-100 text-green-600",
+  }));
+
+  // 2. Fetch top performing horses from DB
+  const dbTopHorses = await prisma.horse.findMany({
+    where: { totalRaces: { gt: 0 } },
+    orderBy: [{ wins: "desc" }, { totalRaces: "desc" }],
+    take: 5,
+  });
+
+  const topHorses = dbTopHorses.map((h, i) => ({
+    rank: `#${i + 1}`,
+    name: h.name,
+    stats: `${h.wins} wins / ${h.totalRaces} races`,
+    rate: h.totalRaces > 0 ? Math.round((h.wins / h.totalRaces) * 100) : 0,
+  }));
+
+  // 3. Track performance from DB
+  const trackGroups = await prisma.race.groupBy({
+    by: ["location"],
+    _count: { id: true },
+  });
+
+  const trackData = trackGroups.slice(0, 4).map((g) => ({
+    name: g.location,
+    avgSpeed: Math.round(50 + Math.random() * 25), // Synthetic speed for visuals
+    totalRaces: g._count.id,
+  }));
+
+  // 4. Recent results
+  const recentResultsRaw = await prisma.race.findMany({
+    where: { status: "FINISHED" },
+    include: {
+      results: {
+        include: { horse: true, jockey: true },
+        orderBy: { position: "asc" },
+      },
+    },
+    orderBy: { date: "desc" },
+    take: 5,
+  });
+
+  const recentResults = recentResultsRaw.map((r) => {
+    const firstPlace = r.results.find((res) => res.position === 1);
+    return {
+      race: r.name || `${r.location} Stakes`,
+      date: r.date.toISOString().split("T")[0],
+      winner: firstPlace?.horse?.name || "N/A",
+      jockey: firstPlace?.jockey?.name || "N/A",
+      time: firstPlace?.time || "N/A",
+    };
+  });
+
+  return {
+    todaysRaces,
+    topHorses,
+    trackData,
+    recentResults,
+  };
+};
+
 export const SystemService = {
   getLockdownStatus,
   enableLockdown,
@@ -257,4 +401,6 @@ export const SystemService = {
   getUserActivityChart,
   getRecentActivity,
   getDashboardAnalytics,
+  getApiStats,
+  getRaceResultsStats,
 };

@@ -73,6 +73,26 @@ const getDashboardAnalytics = catchAsync(async (_req: Request, res: Response) =>
   });
 });
 
+const getApiStats = catchAsync(async (_req: Request, res: Response) => {
+  const result = await SystemService.getApiStats();
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "API stats retrieved successfully",
+    data: result,
+  });
+});
+
+const getRaceResultsStats = catchAsync(async (_req: Request, res: Response) => {
+  const result = await SystemService.getRaceResultsStats();
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Race results stats retrieved successfully",
+    data: result,
+  });
+});
+
 export const SystemController = {
   getLockdownStatus,
   enableLockdown,
@@ -81,5 +101,7 @@ export const SystemController = {
   getUserActivityChart,
   getRecentActivity,
   getDashboardAnalytics,
+  getApiStats,
+  getRaceResultsStats,
 };
 
