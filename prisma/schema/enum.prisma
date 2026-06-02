@@ -25,6 +25,7 @@ enum NotificationType {
 }
 
 enum SubscriptionDuration {
+  WEEKLY
   MONTHLY
   YEARLY
 }

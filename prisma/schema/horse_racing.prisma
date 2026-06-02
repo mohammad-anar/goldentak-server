@@ -10,6 +10,9 @@ model Horse {
   damSireName String? // Mother's Father
   owner       String?
   trainer     String?
+  country     String?
+  bestTime    String?
+  bestTimeLocation String?
 
   // Denormalized stats for fast calculation
   totalRaces    Int       @default(0)

@@ -62,13 +62,23 @@ const calculateRaceScores = async (raceId: string) => {
           sex: entry.horse_sex || null,
           sireName: entry.sire || null,
           damName: entry.dam || null,
+          country: entry.horse_country || null,
         }
       });
-    } else if (entry.horse_id && !horse.externalId) {
-      horse = await prisma.horse.update({
-        where: { id: horse.id },
-        data: { externalId: entry.horse_id.toString() }
-      });
+    } else {
+      const updateData: any = {};
+      if (entry.horse_id && !horse.externalId) {
+        updateData.externalId = entry.horse_id.toString();
+      }
+      if (entry.horse_country && !horse.country) {
+        updateData.country = entry.horse_country;
+      }
+      if (Object.keys(updateData).length > 0) {
+        horse = await prisma.horse.update({
+          where: { id: horse.id },
+          data: updateData
+        });
+      }
     }
 
     // Upsert Jockey
