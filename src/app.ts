@@ -56,7 +56,7 @@ app.use("/api/v1", router);
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    message: "Fantasy UFC League API is running 🥊",
+    message: "Which Win API is running 🏇",
     docs: "/api-docs",
     environment: config.node_env,
     uptime: process.uptime().toFixed(2) + "s",

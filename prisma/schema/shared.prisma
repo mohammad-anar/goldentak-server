@@ -19,3 +19,13 @@ model LegalDocument {
 
   @@map("legal_documents")
 }
+
+model Rating {
+  id        String   @id @default(cuid())
+  deviceId  String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@map("ratings")
+}
