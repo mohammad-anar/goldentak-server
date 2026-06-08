@@ -43,45 +43,40 @@ const deviceLogin = async (deviceId: string) => {
   };
 };
 
-const handleSubscriptionPurchase = async (deviceId: string, planId: string, duration: string) => {
-  console.log("Device purchase request:", { deviceId, planId, duration });
+const handleSubscriptionPurchase = async (deviceId: string, duration: string) => {
+  console.log("Device purchase request:", { deviceId, duration });
   const user = await prisma.user.findUnique({
     where: { deviceId }
   });
 
   if (!user) throw new Error("User not found");
 
-  const planDetail = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
-  if (!planDetail) {
-    console.error("Plan not found for ID:", planId);
-    throw new Error("Plan not found");
-  }
-
-
   const startDate = new Date();
   const endDate = new Date();
   
-  const finalDuration = duration?.toUpperCase() || planDetail.duration;
+  const finalDuration = duration?.toUpperCase() || "WEEKLY";
 
-  if (finalDuration === "MONTHLY") {
+  if (finalDuration === "WEEKLY") {
+    endDate.setDate(startDate.getDate() + 7);
+  } else if (finalDuration === "MONTHLY") {
     endDate.setMonth(startDate.getMonth() + 1);
   } else if (finalDuration === "YEARLY") {
     endDate.setFullYear(startDate.getFullYear() + 1);
+  } else {
+    endDate.setDate(startDate.getDate() + 7);
   }
 
   await prisma.subscription.upsert({
     where: { userId: user.id },
     update: {
-      plan: planDetail.name,
-      planId: planDetail.id,
+      plan: finalDuration,
       startDate,
       endDate,
       isActive: true
     },
     create: {
       userId: user.id,
-      plan: planDetail.name,
-      planId: planDetail.id,
+      plan: finalDuration,
       startDate,
       endDate,
       isActive: true

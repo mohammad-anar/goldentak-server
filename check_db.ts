@@ -1,27 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
-async function check() {
-  const count = await prisma.race.count();
-  console.log('RACE_COUNT:' + count);
-  const race = await prisma.race.findFirst({
-    include: {
-      entries: {
-        include: {
-          horse: true,
-          jockey: true,
-        }
-      },
-      results: {
-        include: {
-          horse: true,
-          jockey: true,
-        }
-      }
-    }
-  });
-  console.log('Race Details Sample:', JSON.stringify(race, null, 2));
+async function clean() {
+  try {
+    await prisma.$executeRawUnsafe(`UPDATE users SET role = 'USER' WHERE role::text = 'PREMIUM';`);
+    console.log("Updated users role from PREMIUM to USER successfully");
+  } catch (e) {
+    console.error("Error updating roles:", e);
+  }
   await prisma.$disconnect();
 }
 
-check();
+clean();

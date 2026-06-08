@@ -24,7 +24,7 @@ const deviceLogin = catchAsync(async (req: Request, res: Response) => {
 
 const purchaseSubscription = catchAsync(async (req: Request, res: Response) => {
   const { deviceId, planId, duration } = req.body;
-  const result = await DeviceAuthService.handleSubscriptionPurchase(deviceId, planId, duration);
+  const result = await DeviceAuthService.handleSubscriptionPurchase(deviceId, duration || planId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

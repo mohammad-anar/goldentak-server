@@ -1,46 +1,49 @@
-﻿import { prisma } from "../../../helpers/prisma.js";
-
-
-const getAllPlans = async () => {
-  return await prisma.subscriptionPlan.findMany({
-    orderBy: { price: "asc" },
-  });
-};
-
-const getPlanById = async (id: string) => {
-  return await prisma.subscriptionPlan.findUnique({
-    where: { id },
-  });
-};
+import { prisma } from "../../../helpers/prisma.js";
 
 const createSubscription = async (data: any) => {
-  const { userId, planId, startDate, endDate } = data;
-  console.log("Creating subscription for user:", userId, "with plan:", planId);
-  
-  const planDetail = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
-  if (!planDetail) {
-    console.error("Plan not found for ID:", planId);
-  }
-
+  const { userId, plan, startDate, endDate } = data;
+  console.log("Creating subscription for user:", userId, "with type:", plan);
   
   return await prisma.subscription.upsert({
     where: { userId },
     update: {
-      plan: planDetail?.name || "CUSTOM",
-      planId,
+      plan: plan || "WEEKLY",
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       isActive: true,
     },
     create: {
       userId,
-      plan: planDetail?.name || "CUSTOM",
-      planId,
+      plan: plan || "WEEKLY",
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       isActive: true,
     },
   });
+};
+
+const getSubscriptionByUserId = async (userId: string) => {
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId },
+  });
+
+  if (!subscription) {
+    return {
+      plan: "FREE",
+      isActive: false,
+      startDate: null,
+      endDate: null,
+    };
+  }
+
+  const isActive = subscription.isActive && new Date(subscription.endDate) > new Date();
+
+  return {
+    plan: subscription.plan,
+    isActive,
+    startDate: subscription.startDate,
+    endDate: subscription.endDate,
+  };
 };
 
 const getSubscriptionOverview = async () => {
@@ -115,19 +118,12 @@ const getSubscriptionOverview = async () => {
           email: true,
         },
       },
-      planDetail: {
-        select: {
-          name: true,
-          price: true,
-        },
-      },
     },
   });
 
   const recentSubscriptions = recentSubs.map((sub) => {
     const userDisplay = sub.user?.name || sub.user?.username || sub.user?.email || "Device User";
-    const planName = sub.plan || sub.planDetail?.name || "Premium Plan";
-    const amountVal = sub.planDetail?.price !== undefined ? `$${sub.planDetail.price.toFixed(2)}` : "$9.99";
+    const planName = sub.plan || "WEEKLY";
 
     // Determine status
     let status = "Cancelled";
@@ -143,7 +139,6 @@ const getSubscriptionOverview = async () => {
     return {
       user: userDisplay,
       plan: planName,
-      amount: amountVal,
       startDate: sub.startDate.toISOString().split("T")[0],
       expiry: sub.endDate.toISOString().split("T")[0],
       status,
@@ -163,29 +158,7 @@ const getSubscriptionOverview = async () => {
 };
 
 export const SubscriptionService = {
-  getAllPlans,
-  getPlanById,
   createSubscription,
-  createPlan,
-  updatePlan,
+  getSubscriptionByUserId,
   getSubscriptionOverview,
 };
-
-async function createPlan(data: any) {
-  return await prisma.subscriptionPlan.create({
-    data: {
-      ...data,
-      id: data.name.toLowerCase().replace(/ /g, "-"),
-    },
-  });
-}
-
-async function updatePlan(id: string, data: any) {
-  return await prisma.subscriptionPlan.update({
-    where: { id },
-    data,
-  });
-}
-
-
-

@@ -12,7 +12,7 @@ const getAllUsers = async (query: {
   const limit = Number(query.limit || 10);
   const skip = (page - 1) * limit;
 
-  const whereConditions: any = {};
+  const whereConditions: any = { role: "USER" };
   const andConditions: any[] = [];
 
   if (query.searchTerm) {
@@ -95,6 +95,7 @@ const getCurrentLoginUsers = async (query: {
 
   const whereConditions: any = {
     deviceId: { not: null },
+    role: "USER",
   };
   const andConditions: any[] = [];
 
@@ -187,11 +188,7 @@ const getUserById = async (id: string) => {
   return await prisma.user.findUnique({
     where: { id },
     include: {
-      subscription: {
-        include: {
-          planDetail: true
-        }
-      },
+      subscription: true,
       _count: {
         select: { notifications: true }
       }

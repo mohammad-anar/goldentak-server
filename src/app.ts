@@ -18,9 +18,29 @@ if (config.node_env === "development") {
   });
 }
 
+const allowedOrigins = [
+  "https://horse-racing-dashboard-one.vercel.app",
+  "https://horse-racing-dashboard-one.vercel.app/",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:5173",
+  "http://localhost:5174",
+];
+
+if (config.cors_origin) {
+  const envOrigins = config.cors_origin.split(",").map((o) => o.trim());
+  allowedOrigins.push(...envOrigins);
+}
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Not allowed by CORS: ${origin}`));
+      }
+    },
     credentials: true,
   })
 );
