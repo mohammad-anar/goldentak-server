@@ -4,7 +4,7 @@ import { paginationHelper } from "../../../helpers/paginationHelper.js";
 
 
 const getAllRaces = async (filters: any) => {
-  const { date, location, status, ...options } = filters;
+  const { date, location, status, search, ...options } = filters;
   const { page, limit, skip, sortBy, sortOrder } = paginationHelper.calculatePagination(options);
 
   const where: any = {};
@@ -28,6 +28,14 @@ const getAllRaces = async (filters: any) => {
 
   if (status) {
     where.status = status as RaceStatus;
+  }
+
+  if (search) {
+    where.OR = [
+      { country: { contains: search, mode: "insensitive" } },
+      { location: { contains: search, mode: "insensitive" } },
+      { name: { contains: search, mode: "insensitive" } },
+    ];
   }
 
   const [data, total] = await Promise.all([
