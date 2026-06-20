@@ -20,7 +20,11 @@ const createNotification = async (payload: {
   });
 
   // Emit real-time notification
-  emitNotification(payload.userId, result);
+  try {
+    emitNotification(payload.userId, result);
+  } catch (err) {
+    console.error(`Socket emit failed for notification ${result.id}:`, err);
+  }
 
   // Send push notification via Firebase FCM if user has an fcmToken
   try {
