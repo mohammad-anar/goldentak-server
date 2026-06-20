@@ -82,6 +82,21 @@ const redisClientWrapper: any = new Proxy(rawClient, {
       };
     }
 
+    // Override flushAll / flushall
+    if (prop === "flushAll" || prop === "flushall") {
+      return async () => {
+        memoryStore.clear();
+        if (isRedisConnected) {
+          try {
+            return await rawClient.flushAll();
+          } catch (err) {
+            // fall through
+          }
+        }
+        return "OK";
+      };
+    }
+
     // Default: forward to raw client
     return Reflect.get(target, prop, receiver);
   }

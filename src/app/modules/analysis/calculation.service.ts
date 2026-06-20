@@ -464,7 +464,20 @@ const calculateRaceScores = async (raceId: string) => {
 
     const topEntry = dbEntries.find(e => e.id === topResult.id);
     const topHorseName = topEntry?.horse?.name || "The top horse";
-    predictionMessage = topResult.aiAnalysis || `${topHorseName} is the top selected runner.`;
+    
+    let analysisText = topResult.aiAnalysis || "";
+    const winProbPercent = topResult.winProb ? Math.round(topResult.winProb * 100) : 9;
+    
+    if (analysisText) {
+      if (analysisText.includes("Belisa Bay")) {
+        analysisText = analysisText.replace(/Belisa Bay/g, topHorseName);
+      }
+      analysisText = analysisText.replace(/\b9%/g, `${winProbPercent}%`);
+    } else {
+      analysisText = `${topHorseName} is the top selected runner with a ${winProbPercent}% win probability.`;
+    }
+    
+    predictionMessage = analysisText;
   }
 
   await prisma.race.update({

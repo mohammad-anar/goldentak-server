@@ -1,0 +1,18 @@
+import { prisma } from "./helpers/prisma.js";
+import { CalculationService } from "./app/modules/analysis/calculation.service.js";
+
+async function main() {
+  const races = await prisma.race.findMany();
+  console.log(`Found ${races.length} races. Recalculating...`);
+  for (const race of races) {
+    try {
+      console.log(`Calculating for race ${race.id} (${race.location})...`);
+      await CalculationService.calculateRaceScores(race.id);
+    } catch (e: any) {
+      console.error(`Failed for race ${race.id}:`, e.message);
+    }
+  }
+  console.log("Done!");
+}
+
+main().catch(console.error).finally(() => prisma.$disconnect());

@@ -1,9 +1,20 @@
 import { RaceStatus } from "@prisma/client";
 import { prisma } from "../../../helpers/prisma.js";
 import { paginationHelper } from "../../../helpers/paginationHelper.js";
+import redisClient from "../../../helpers/redis.js";
 
 
 const getAllRaces = async (filters: any) => {
+  const cacheKey = `races:list:${JSON.stringify(filters)}`;
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+  } catch (e) {
+    console.error("[Redis] getAllRaces read error:", e);
+  }
+
   const { date, location, status, search, country, ...options } = filters;
   const { page, limit, skip, sortBy, sortOrder } = paginationHelper.calculatePagination(options);
 
@@ -57,7 +68,7 @@ const getAllRaces = async (filters: any) => {
     prisma.race.count({ where })
   ]);
 
-  return {
+  const result = {
     meta: {
       page,
       limit,
@@ -66,10 +77,28 @@ const getAllRaces = async (filters: any) => {
     },
     data
   };
+
+  try {
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(result));
+  } catch (e) {
+    console.error("[Redis] getAllRaces write error:", e);
+  }
+
+  return result;
 };
 
 const getRaceById = async (id: string) => {
-  return await prisma.race.findUnique({
+  const cacheKey = `races:id:${id}`;
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+  } catch (e) {
+    console.error("[Redis] getRaceById read error:", e);
+  }
+
+  const result = await prisma.race.findUnique({
     where: { id },
     include: {
       entries: {
@@ -90,6 +119,16 @@ const getRaceById = async (id: string) => {
       }
     }
   });
+
+  try {
+    if (result) {
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(result));
+    }
+  } catch (e) {
+    console.error("[Redis] getRaceById write error:", e);
+  }
+
+  return result;
 };
 
 const getRaceDates = async (month?: string) => {
@@ -113,6 +152,16 @@ const getRaceDates = async (month?: string) => {
 };
 
 const getRaceStatistics = async (id: string) => {
+  const cacheKey = `races:stats:${id}`;
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+  } catch (e) {
+    console.error("[Redis] getRaceStatistics read error:", e);
+  }
+
   const race = await prisma.race.findUnique({
     where: { id },
     include: {
@@ -245,7 +294,7 @@ const getRaceStatistics = async (id: string) => {
     };
   });
 
-  return {
+  const result = {
     earnings,
     origin,
     distance,
@@ -255,9 +304,27 @@ const getRaceStatistics = async (id: string) => {
     coRaces,
     bestTime
   };
+
+  try {
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(result));
+  } catch (e) {
+    console.error("[Redis] getRaceStatistics write error:", e);
+  }
+
+  return result;
 };
 
 const getRaceLocations = async (filters: any) => {
+  const cacheKey = `races:locations:${JSON.stringify(filters)}`;
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+  } catch (e) {
+    console.error("[Redis] getRaceLocations read error:", e);
+  }
+
   const { date, status, search, country } = filters;
   const where: any = {};
 
@@ -321,6 +388,14 @@ const getRaceLocations = async (filters: any) => {
   }
 
   const results = Object.values(locationMap).sort((a, b) => a.location.localeCompare(b.location));
+
+  try {
+    await prisma.raceEntry.count(); // Dummy read to ensure connection is fine
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(results));
+  } catch (e) {
+    console.error("[Redis] getRaceLocations write error:", e);
+  }
+
   return results;
 };
 
