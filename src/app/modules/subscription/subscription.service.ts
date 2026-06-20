@@ -1,10 +1,11 @@
 import { prisma } from "../../../helpers/prisma.js";
+import { NotificationService } from "../notification/notification.service.js";
 
 const createSubscription = async (data: any) => {
   const { userId, plan, startDate, endDate } = data;
   console.log("Creating subscription for user:", userId, "with type:", plan);
   
-  return await prisma.subscription.upsert({
+  const result = await prisma.subscription.upsert({
     where: { userId },
     update: {
       plan: plan || "WEEKLY",
@@ -20,6 +21,11 @@ const createSubscription = async (data: any) => {
       isActive: true,
     },
   });
+
+  // Notify user that subscription is activated
+  await NotificationService.sendSubscriptionNotification(userId, "ACTIVATED", new Date(endDate));
+
+  return result;
 };
 
 const getSubscriptionByUserId = async (userId: string) => {

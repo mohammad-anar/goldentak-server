@@ -1,6 +1,7 @@
 import { RaceStatus } from "@prisma/client";
 import { prisma } from "../../../helpers/prisma.js";
 import { rapidApi } from "../../config/rapid_api.js";
+import { NotificationService } from "../notification/notification.service.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BULK PREDICTIONS CACHE
@@ -161,9 +162,10 @@ const refreshRaceStatuses = async () => {
       if (card.status === "finished") dbStatus = RaceStatus.FINISHED;
       else if (card.status === "live" || card.status === "off") dbStatus = RaceStatus.LIVE;
 
-      const existing = await prisma.race.findUnique({ where: { externalId }, select: { status: true } });
+      const existing = await prisma.race.findUnique({ where: { externalId }, select: { id: true, status: true } });
       if (existing && existing.status !== dbStatus) {
         await prisma.race.update({ where: { externalId }, data: { status: dbStatus } });
+        await NotificationService.handleRaceStatusChange(existing.id, existing.status, dbStatus);
         updated++;
       }
     }

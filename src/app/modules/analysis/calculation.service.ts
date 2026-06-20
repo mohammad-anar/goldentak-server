@@ -1,6 +1,8 @@
 import { prisma } from "../../../helpers/prisma.js";
 import { rapidApi } from "../../config/rapid_api.js";
 import { getPredictionCache } from "./sync.service.js";
+import { NotificationService } from "../notification/notification.service.js";
+import { NotificationType } from "@prisma/client";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WEIGHT PARSER
@@ -154,6 +156,9 @@ const calculateRaceScores = async (raceId: string) => {
       status: dbStatus as any,
     },
   });
+
+  // Trigger status change notifications if appropriate
+  await NotificationService.handleRaceStatusChange(race.id, race.status, dbStatus as any);
 
   const apiEntries = apiRace.entries || [];
   console.log(`[Calc] Synced details. Found ${apiEntries.length} entries.`);
@@ -626,6 +631,10 @@ const calculateRaceScores = async (raceId: string) => {
     where: { id: race.id },
     data: { tahmin1X, riskRate, predictionMessage, hasPredictions: true },
   });
+
+  if (results.length > 0) {
+    await NotificationService.sendRaceNotification(race.id, NotificationType.PREDICTION_READY);
+  }
 
   // 10. Return sorted entries
   return await prisma.raceEntry.findMany({
