@@ -77,7 +77,10 @@ const getRaceById = async (id: string) => {
           horse: true,
           jockey: true,
         },
-        orderBy: { normalizedScore: 'desc' }
+        orderBy: [
+          { rank: 'asc' },
+          { normalizedScore: 'desc' }
+        ]
       },
       results: {
         include: {

@@ -38,6 +38,7 @@ const syncUpcomingRaces = async () => {
         country: card.country || "United Kingdom",
         status: dbStatus,
         hasPredictions: card.has_predictions || false,
+        prize: card.prize_money ? card.prize_money.toString() : null,
       };
 
       await prisma.race.upsert({
@@ -52,6 +53,7 @@ const syncUpcomingRaces = async () => {
           country: raceData.country,
           status: raceData.status,
           hasPredictions: raceData.hasPredictions,
+          prize: raceData.prize,
         },
         create: raceData,
       });
