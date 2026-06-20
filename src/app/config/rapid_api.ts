@@ -37,8 +37,11 @@ rapidApi.interceptors.response.use(
       if (url.includes("/races/today")) {
         const filePath = path.join(process.cwd(), "races_today_response.json");
         if (fs.existsSync(filePath)) {
-          console.log("[rapidApi] Serving fallback from races_today_response.json");
-          const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+          console.log("[rapidApi] Serving fallback from races_today_response.json with dynamic dates");
+          let fileContent = fs.readFileSync(filePath, "utf8");
+          const todayStr = new Date().toISOString().split("T")[0];
+          fileContent = fileContent.replace(/2026-05-22/g, todayStr);
+          const data = JSON.parse(fileContent);
           return { data, status: 200, statusText: "OK", headers: {}, config };
         }
       }

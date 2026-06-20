@@ -4,7 +4,7 @@ import { paginationHelper } from "../../../helpers/paginationHelper.js";
 
 
 const getAllRaces = async (filters: any) => {
-  const { date, location, status, search, ...options } = filters;
+  const { date, location, status, search, country, ...options } = filters;
   const { page, limit, skip, sortBy, sortOrder } = paginationHelper.calculatePagination(options);
 
   const where: any = {};
@@ -28,6 +28,10 @@ const getAllRaces = async (filters: any) => {
 
   if (status) {
     where.status = status as RaceStatus;
+  }
+
+  if (country) {
+    where.country = country;
   }
 
   if (search) {
@@ -250,9 +254,79 @@ const getRaceStatistics = async (id: string) => {
   };
 };
 
+const getRaceLocations = async (filters: any) => {
+  const { date, status, search, country } = filters;
+  const where: any = {};
+
+  if (date) {
+    const startDate = new Date(date);
+    startDate.setUTCHours(0, 0, 0, 0);
+    
+    const endDate = new Date(date);
+    endDate.setUTCHours(23, 59, 59, 999);
+
+    where.date = {
+      gte: startDate,
+      lte: endDate,
+    };
+  }
+
+  if (status) {
+    where.status = status as RaceStatus;
+  }
+
+  if (country) {
+    where.country = country;
+  }
+
+  if (search) {
+    where.OR = [
+      { country: { contains: search, mode: "insensitive" } },
+      { location: { contains: search, mode: "insensitive" } },
+      { name: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  const races = await prisma.race.findMany({
+    where,
+    select: {
+      location: true,
+      country: true,
+      status: true,
+    }
+  });
+
+  const locationMap: Record<string, { location: string; country: string; racesCount: number; isLive: boolean }> = {};
+
+  for (const race of races) {
+    if (!race.location) continue;
+    
+    const key = race.location;
+    if (!locationMap[key]) {
+      locationMap[key] = {
+        location: race.location,
+        country: race.country || "Unknown",
+        racesCount: 0,
+        isLive: false,
+      };
+    }
+    
+    locationMap[key].racesCount++;
+    if (race.status === 'LIVE') {
+      locationMap[key].isLive = true;
+    }
+  }
+
+  const results = Object.values(locationMap).sort((a, b) => a.location.localeCompare(b.location));
+  return results;
+};
+
+
 export const RaceService = {
   getAllRaces,
   getRaceById,
   getRaceDates,
   getRaceStatistics,
+  getRaceLocations,
 };
+

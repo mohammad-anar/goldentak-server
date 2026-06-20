@@ -1,4 +1,4 @@
-﻿import { prisma } from "../../helpers/prisma.js";
+import { prisma } from "../../helpers/prisma.js";
 import cron from "node-cron";
 import { SyncService } from "../modules/analysis/sync.service.js";
 import { CalculationService } from "../modules/analysis/calculation.service.js";
@@ -68,13 +68,8 @@ export const initRaceCron = () => {
   // Also run an immediate check on startup
   const checkAndSyncOnStartup = async () => {
     try {
-      const count = await prisma.race.count();
-      if (count === 0) {
-        console.log(`[${new Date().toISOString()}] No races found in database. Triggering initial synchronization...`);
-        await runRaceSync();
-      } else {
-        console.log(`[${new Date().toISOString()}] Database already has ${count} races. Skipping initial synchronization.`);
-      }
+      console.log(`[${new Date().toISOString()}] Triggering startup race synchronization...`);
+      await runRaceSync();
       
       console.log(`[${new Date().toISOString()}] Triggering startup predictions update check...`);
       await runPendingPredictionsUpdate();

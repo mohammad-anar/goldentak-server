@@ -84,10 +84,28 @@ const getRaceStatistics = async (req: Request, res: Response) => {
   }
 };
 
+const getRaceLocations = async (req: Request, res: Response) => {
+  try {
+    const result = await RaceService.getRaceLocations(req.query);
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: "Race locations fetched successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const RaceController = {
   getAllRaces,
   getRaceById,
   calculateRaceScores,
   getRaceDates,
   getRaceStatistics,
+  getRaceLocations,
 };
+
