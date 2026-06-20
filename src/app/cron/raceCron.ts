@@ -9,6 +9,13 @@ export const runRaceSync = async () => {
   try {
     const result = await SyncService.syncUpcomingRaces();
     console.log(`[${new Date().toISOString()}] Automatic race synchronization completed successfully. Synced ${result.count} races.`);
+    
+    // Warm up the bulk predictions cache
+    try {
+      await SyncService.syncBulkPredictions();
+    } catch (predError: any) {
+      console.error(`[${new Date().toISOString()}] Error caching bulk predictions:`, predError.message);
+    }
   } catch (error: any) {
     console.error(`[${new Date().toISOString()}] Error running automatic race synchronization:`, error.message);
   }

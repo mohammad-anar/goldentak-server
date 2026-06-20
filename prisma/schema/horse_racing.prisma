@@ -99,6 +99,7 @@ model RaceEntry {
   horseId    String
   jockeyId   String?
   jockeyName String?
+  trainerName String?
   weight     Float?
   draw       Int?
 
@@ -111,18 +112,25 @@ model RaceEntry {
   rank            Int?
   category        Category?
 
-  // AI Prediction Details
+  // AI Prediction Details — Core Markets
   winProb                  Float?
   winOddsFair              Float?
   placeProb                Float?
+  eachWayProb              Float?   // Each Way market probability
   goingSuitabilityScore    Float?
   distanceSuitabilityScore Float?
+  courseSpecialistScore    Float?   // Course Specialist score
+  drawBiasScore            Float?   // Draw Bias score
   jockeyFormScore          Float?
   trainerFormScore         Float?
   aiSelectionRank          Int?
   aiConfidence             String?
   aiConfidenceScore        Float?
-  aiAnalysis               String?   @db.Text
+  aiAnalysis               String?  @db.Text
+
+  // AI Value Edge — flags underpriced horses vs bookmaker odds
+  hasValueEdge    Boolean?  // true if AI fair odds > bookmaker price
+  valueEdgePercent Float?   // e.g. 12.5 means 12.5% edge
 
   race   Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
   horse  Horse   @relation(fields: [horseId], references: [id], onDelete: Cascade)

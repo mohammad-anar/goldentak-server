@@ -90,6 +90,9 @@ export const initSocket = (server: any) => {
       console.log(`📤 Socket ${socket.id} left draft room: ${leagueId}`);
     });
 
+    // NOTE: Live race updates are handled via HTTP Server-Sent Events (SSE)
+    // at GET /api/v1/race/:id/stream — not via Socket.IO.
+
     socket.on("disconnect", () => {
       console.log(`❌ Socket disconnected: ${socket.id}`);
       for (const [userId, sockets] of socketMap.entries()) {
@@ -130,3 +133,6 @@ export const emitNotification = (userId: string, data: any) => {
   const socketIds = getSocketIds(userId);
   socketIds.forEach((id) => socket.to(id).emit("notification", data));
 };
+
+// NOTE: Race live updates are delivered via HTTP SSE (sseHelper.ts).
+// Use pushRaceUpdate() from sseHelper instead of Socket.IO for race streams.

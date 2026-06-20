@@ -59,6 +59,15 @@ rapidApi.interceptors.response.use(
         }
       }
       
+      if (url.includes("/predictions/today")) {
+        const filePath = path.join(process.cwd(), "predictions_today_response.json");
+        if (fs.existsSync(filePath)) {
+          console.log("[rapidApi] Serving fallback from predictions_today_response.json");
+          const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+          return { data, status: 200, statusText: "OK", headers: {}, config };
+        }
+      }
+      
       if (url.includes("/predictions/race/")) {
         const id = url.split("/predictions/race/")[1];
         const filePath = path.join(process.cwd(), "predictions_race_response.json");
