@@ -14,6 +14,12 @@ async function main() {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
   // 1. Create Jockeys
   const jockeyData = [
     { name: "C. Demuro", externalId: "j-1" },
@@ -216,18 +222,36 @@ async function main() {
     const firstHorseName = raceHorses[0].name;
     const predictionMessage = `${firstHorseName} displays dominant metrics on today's ${m.trackType} track. Strong past speed rating makes this selection the premium AI Choice.`;
 
+    let raceDate = today;
+    let dbStatus = m.status;
+    if (idx < 3) {
+      raceDate = yesterday;
+      dbStatus = RaceStatus.FINISHED;
+    } else if (idx >= 7) {
+      raceDate = tomorrow;
+      dbStatus = RaceStatus.UPCOMING;
+    } else {
+      if (idx === 5) {
+        dbStatus = RaceStatus.LIVE;
+      } else if (idx === 3) {
+        dbStatus = RaceStatus.UPCOMING;
+      } else {
+        dbStatus = RaceStatus.FINISHED;
+      }
+    }
+
     const race = await prisma.race.create({
       data: {
         externalId,
         name: m.name,
-        date: today,
+        date: raceDate,
         time: m.time,
         location: m.location,
         country: m.country,
         trackType: m.trackType,
         distance: m.distance,
         prize: "25000",
-        status: m.status,
+        status: dbStatus,
         tahmin1X,
         riskRate,
         predictionMessage,
@@ -282,7 +306,7 @@ async function main() {
       });
 
       // If race is finished, create results
-      if (m.status === RaceStatus.FINISHED) {
+      if (dbStatus === RaceStatus.FINISHED) {
         let earnings = 0;
         if (rank === 1) earnings = 15000;
         else if (rank === 2) earnings = 5000;

@@ -2,6 +2,8 @@ import { RaceStatus } from "@prisma/client";
 import { prisma } from "../../../helpers/prisma.js";
 import { paginationHelper } from "../../../helpers/paginationHelper.js";
 import redisClient from "../../../helpers/redis.js";
+import { SyncService } from "../analysis/sync.service.js";
+import { CalculationService } from "../analysis/calculation.service.js";
 
 
 const getAllRaces = async (filters: any) => {
@@ -31,6 +33,64 @@ const getAllRaces = async (filters: any) => {
       gte: startDate,
       lte: endDate,
     };
+
+    // On-demand sync and scoring calculation if no local data exists for the selected date
+    try {
+      const localCount = await prisma.race.count({ where });
+      if (localCount === 0) {
+        console.log(`[RaceService] No races found locally for date ${date}. Triggering on-demand sync...`);
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const targetDate = new Date(date);
+        targetDate.setUTCHours(0, 0, 0, 0);
+
+        const diffTime = targetDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+          // Today
+          await SyncService.syncUpcomingRaces(1);
+          await SyncService.syncBulkPredictions(1);
+        } else if (diffDays < 0) {
+          // Past date (results)
+          const daysBack = Math.abs(diffDays);
+          if (daysBack <= 30) {
+            await SyncService.syncPastResults(daysBack + 1);
+            await SyncService.syncBulkPredictions(1);
+          }
+        } else {
+          // Future date (upcoming)
+          if (diffDays <= 14) {
+            await SyncService.syncUpcomingRaces(diffDays + 1);
+            await SyncService.syncBulkPredictions(diffDays + 1);
+          }
+        }
+
+        // Run calculation for any race on this date that hasn't been calculated yet
+        const newRaces = await prisma.race.findMany({
+          where: {
+            date: {
+              gte: startDate,
+              lte: endDate,
+            }
+          }
+        });
+
+        for (const r of newRaces) {
+          try {
+            const entryCount = await prisma.raceEntry.count({ where: { raceId: r.id } });
+            if (entryCount === 0) {
+              console.log(`[RaceService] Calculating scores on-demand for race ${r.id} (${r.location})`);
+              await CalculationService.calculateRaceScores(r.id);
+            }
+          } catch (calcErr: any) {
+            console.error(`[RaceService] On-demand calculation failed for race ${r.id}:`, calcErr.message);
+          }
+        }
+      }
+    } catch (syncErr: any) {
+      console.error("[RaceService] On-demand sync/calculation failed:", syncErr.message);
+    }
   }
 
   if (location) {

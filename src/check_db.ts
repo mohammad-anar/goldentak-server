@@ -13,6 +13,26 @@ async function main() {
   console.log(`- Jockeys: ${jockeyCount}`);
 
   if (raceCount > 0) {
+    const dates = await prisma.race.groupBy({
+      by: ['date'],
+      _count: { id: true },
+      orderBy: { date: 'asc' }
+    });
+    console.log('\nRaces by Date:');
+    for (const d of dates) {
+      console.log(`- Date: ${d.date.toISOString().split('T')[0]}, Count: ${d._count.id}`);
+    }
+
+    const statuses = await prisma.race.groupBy({
+      by: ['status'],
+      _count: { id: true },
+      orderBy: { status: 'asc' }
+    });
+    console.log('\nRaces by Status:');
+    for (const s of statuses) {
+      console.log(`- Status: ${s.status}, Count: ${s._count.id}`);
+    }
+
     const races = await prisma.race.findMany({
       take: 5,
       orderBy: { date: 'desc' },

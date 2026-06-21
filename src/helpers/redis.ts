@@ -1,4 +1,8 @@
 import { createClient } from "redis";
+import dotenv from "dotenv";
+import path from "path";
+
+dotenv.config({ path: path.join(process.cwd(), ".env") });
 
 let isRedisConnected = false;
 const memoryStore = new Map<string, { value: string; expiry: number }>();
@@ -101,5 +105,30 @@ const redisClientWrapper: any = new Proxy(rawClient, {
     return Reflect.get(target, prop, receiver);
   }
 });
+
+export const clearRaceCache = async (raceId?: string) => {
+  // 1. Clear in-memory fallback
+  for (const key of memoryStore.keys()) {
+    if (key.startsWith("races:") || (raceId && key.includes(raceId))) {
+      memoryStore.delete(key);
+    }
+  }
+
+  // 2. Clear Redis
+  if (isRedisConnected) {
+    try {
+      let keys = await rawClient.keys("races:*");
+      if (raceId) {
+        keys = keys.filter(k => k.startsWith("races:list:") || k.includes(raceId));
+      }
+      if (keys.length > 0) {
+        await rawClient.del(keys);
+      }
+      console.log(`[Redis] Cleared ${keys.length} race cache keys.`);
+    } catch (err: any) {
+      console.warn("[Redis] Failed to clear race cache:", err.message);
+    }
+  }
+};
 
 export default redisClientWrapper;

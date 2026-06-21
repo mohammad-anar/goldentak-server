@@ -2,6 +2,8 @@ import { RaceStatus } from "@prisma/client";
 import { prisma } from "../../../helpers/prisma.js";
 import { rapidApi } from "../../config/rapid_api.js";
 import { NotificationService } from "../notification/notification.service.js";
+import { pushRaceStatusChange } from "../../../helpers/sseHelper.js";
+import { clearRaceCache } from "../../../helpers/redis.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BULK PREDICTIONS CACHE
@@ -24,12 +26,12 @@ export function getPredictionCache(): PredictionCache | null {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SYNC UPCOMING RACES
-// Calls /races/today to upsert today's race cards into the DB.
+// Calls /races/upcoming?days=3 to upsert upcoming race cards into the DB.
 // ─────────────────────────────────────────────────────────────────────────────
-const syncUpcomingRaces = async () => {
+const syncUpcomingRaces = async (days: number = 3) => {
   try {
-    console.log("[Sync] Fetching today's races from Rapid API...");
-    const response = await rapidApi.get("/races/today");
+    console.log(`[Sync] Fetching upcoming races (next ${days} days) from Rapid API...`);
+    const response = await rapidApi.get(`/races/upcoming?days=${days}`);
     const races = response.data?.data || [];
 
     if (races.length > 0) {
@@ -78,6 +80,7 @@ const syncUpcomingRaces = async () => {
       });
     }
 
+    await clearRaceCache();
     return { success: true, count: races.length };
   } catch (error: any) {
     console.error("Sync Error:", error.message);
@@ -87,41 +90,18 @@ const syncUpcomingRaces = async () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SYNC BULK PREDICTIONS
-// Calls GET /predictions/today — one request that returns every horse's AI
-// prediction for all races today. Result is indexed into _predictionCache
-// so calculateRaceScores() can look up predictions instantly without an
-// extra API round-trip per race.
-//
-// The API description says predictions are pre-generated at 07:30 UTC,
-// so this should be called in the cron after 07:30 UTC.
-//
-// Expected response shape (based on the API's /predictions/race/{id} format):
-//   {
-//     data: [
-//       {
-//         race_id: 123,
-//         predictions: [
-//           { horse_id, horse_name, win: {...}, place: {...},
-//             going_suitability: {...}, distance_suitability: {...},
-//             course_specialist: {...}, draw_bias: {...},
-//             jockey_form: {...}, trainer_form: {...},
-//             each_way: {...}, value_edge: {...},
-//             selection_rank, confidence, confidence_score, analysis }
-//         ]
-//       }
-//     ]
-//   }
+// Calls GET /predictions/upcoming?days=X — one request that returns every horse's AI
+// prediction for all upcoming races. Result is indexed into _predictionCache.
 // ─────────────────────────────────────────────────────────────────────────────
-const syncBulkPredictions = async (): Promise<PredictionCache> => {
-  console.log("[Sync] Fetching today's bulk predictions from Rapid API (GET /predictions/today)...");
+const syncBulkPredictions = async (days: number = 3): Promise<PredictionCache> => {
+  console.log(`[Sync] Fetching upcoming bulk predictions from Rapid API (GET /predictions/upcoming?days=${days})...`);
 
-  const response = await rapidApi.get("/predictions/today");
+  const response = await rapidApi.get(`/predictions/upcoming?days=${days}`);
   const rawData: any[] = response.data?.races || response.data?.data || response.data?.predictions || [];
 
   const byRaceId = new Map<string, any[]>();
 
   for (const raceBlock of rawData) {
-    // Handle both flat array and nested { race_id, predictions[] } shapes
     const raceId = raceBlock.race_id?.toString() ?? raceBlock.id?.toString();
     const preds: any[] = raceBlock.predictions ?? (Array.isArray(raceBlock) ? raceBlock : []);
 
@@ -141,6 +121,66 @@ const syncBulkPredictions = async (): Promise<PredictionCache> => {
   );
 
   return _predictionCache;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYNC PAST RESULTS
+// Calls GET /races/results?days=X to upsert recent finished races into the DB.
+// ─────────────────────────────────────────────────────────────────────────────
+const syncPastResults = async (days: number = 3) => {
+  try {
+    console.log(`[Sync] Fetching recent race results (last ${days} days) from Rapid API...`);
+    const response = await rapidApi.get(`/races/results?days=${days}`);
+    const races = response.data?.data || [];
+
+    for (const card of races) {
+      const externalId = card.id.toString();
+
+      let dbStatus: RaceStatus = RaceStatus.FINISHED;
+      if (card.status === "live" || card.status === "off") {
+        dbStatus = RaceStatus.LIVE;
+      } else if (card.status === "scheduled") {
+        dbStatus = RaceStatus.UPCOMING;
+      }
+
+      const raceData = {
+        externalId,
+        name: card.race_name || "Unknown Race",
+        date: new Date(card.race_date),
+        time: card.off_time || "",
+        location: card.racecourse_name || "Unknown Course",
+        trackType: card.going || null,
+        distance: card.distance || null,
+        country: card.country || "United Kingdom",
+        status: dbStatus,
+        hasPredictions: card.has_predictions || false,
+        prize: card.prize_money ? card.prize_money.toString() : null,
+      };
+
+      await prisma.race.upsert({
+        where: { externalId },
+        update: {
+          name: raceData.name,
+          date: raceData.date,
+          time: raceData.time,
+          location: raceData.location,
+          trackType: raceData.trackType,
+          distance: raceData.distance,
+          country: raceData.country,
+          status: raceData.status,
+          hasPredictions: raceData.hasPredictions,
+          prize: raceData.prize,
+        },
+        create: raceData,
+      });
+    }
+
+    await clearRaceCache();
+    return { success: true, count: races.length };
+  } catch (error: any) {
+    console.error("Sync Past Results Error:", error.message);
+    throw error;
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,6 +206,8 @@ const refreshRaceStatuses = async () => {
       if (existing && existing.status !== dbStatus) {
         await prisma.race.update({ where: { externalId }, data: { status: dbStatus } });
         await NotificationService.handleRaceStatusChange(existing.id, existing.status, dbStatus);
+        pushRaceStatusChange(existing.id, dbStatus);
+        await clearRaceCache(existing.id);
         updated++;
       }
     }
@@ -181,5 +223,6 @@ const refreshRaceStatuses = async () => {
 export const SyncService = {
   syncUpcomingRaces,
   syncBulkPredictions,
+  syncPastResults,
   refreshRaceStatuses,
 };

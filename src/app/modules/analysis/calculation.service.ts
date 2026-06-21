@@ -3,6 +3,8 @@ import { rapidApi } from "../../config/rapid_api.js";
 import { getPredictionCache } from "./sync.service.js";
 import { NotificationService } from "../notification/notification.service.js";
 import { NotificationType } from "@prisma/client";
+import { pushRaceUpdate } from "../../../helpers/sseHelper.js";
+import { clearRaceCache } from "../../../helpers/redis.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WEIGHT PARSER
@@ -636,12 +638,27 @@ const calculateRaceScores = async (raceId: string) => {
     await NotificationService.sendRaceNotification(race.id, NotificationType.PREDICTION_READY);
   }
 
-  // 10. Return sorted entries
-  return await prisma.raceEntry.findMany({
+  // 10. Fetch sorted entries and push SSE update
+  const finalEntries = await prisma.raceEntry.findMany({
     where: { raceId: race.id },
     include: { horse: true, jockey: true },
     orderBy: { rank: "asc" },
   });
+
+  const updatedRace = await prisma.race.findUnique({
+    where: { id: race.id },
+  });
+
+  if (updatedRace) {
+    pushRaceUpdate(race.id, {
+      ...updatedRace,
+      entries: finalEntries,
+    });
+  }
+
+  await clearRaceCache(race.id);
+
+  return finalEntries;
 };
 
 export const CalculationService = {

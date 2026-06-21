@@ -8,8 +8,15 @@ export const runRaceSync = async () => {
   console.log(`[${new Date().toISOString()}] Starting automatic race synchronization...`);
   try {
     const result = await SyncService.syncUpcomingRaces();
-    console.log(`[${new Date().toISOString()}] Automatic race synchronization completed successfully. Synced ${result.count} races.`);
+    console.log(`[${new Date().toISOString()}] Automatic race synchronization completed successfully. Synced ${result.count} upcoming races.`);
     
+    try {
+      const pastResult = await SyncService.syncPastResults();
+      console.log(`[${new Date().toISOString()}] Synced ${pastResult.count} recent race results.`);
+    } catch (pastError: any) {
+      console.error(`[${new Date().toISOString()}] Error syncing recent race results:`, pastError.message);
+    }
+
     // Warm up the bulk predictions cache
     try {
       await SyncService.syncBulkPredictions();
@@ -25,19 +32,10 @@ export const runPendingPredictionsUpdate = async () => {
   console.log(`[${new Date().toISOString()}] Checking for races with ready predictions to calculate...`);
   
   try {
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setUTCHours(23, 59, 59, 999);
-
-    // Find today's races that have predictions available (hasPredictions == true),
+    // Find races that have predictions available (hasPredictions == true),
     // but do not have calculations completed yet (entries is empty or entries have null scores)
     const racesToCalculate = await prisma.race.findMany({
       where: {
-        date: {
-          gte: todayStart,
-          lte: todayEnd,
-        },
         hasPredictions: true,
         OR: [
           { entries: { none: {} } },
