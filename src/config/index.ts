@@ -31,4 +31,14 @@ export default {
     password: process.env.PASSWORD,
     avatar: process.env.AVATAR,
   },
+  googlePlay: {
+    clientEmail: process.env.GOOGLE_PLAY_CLIENT_EMAIL,
+    privateKey: process.env.GOOGLE_PLAY_PRIVATE_KEY,
+  },
+  apple: {
+    keyId: process.env.APPLE_KEY_ID,
+    issuerId: process.env.APPLE_ISSUER_ID,
+    privateKey: process.env.APPLE_PRIVATE_KEY,
+    bundleId: process.env.APPLE_BUNDLE_ID,
+  },
 };

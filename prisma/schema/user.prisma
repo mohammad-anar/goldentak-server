@@ -23,12 +23,14 @@ model User {
   @@map("users")
 }
 model Subscription {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  plan      String   @default("WEEKLY") // "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"
-  startDate DateTime @default(now())
-  endDate   DateTime
-  isActive  Boolean  @default(true)
+  id                         String   @id @default(cuid())
+  userId                     String   @unique
+  plan                       String   @default("WEEKLY") // "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"
+  startDate                  DateTime @default(now())
+  endDate                    DateTime
+  isActive                   Boolean  @default(true)
+  googlePurchaseToken        String?  @unique
+  appleOriginalTransactionId String?  @unique
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
