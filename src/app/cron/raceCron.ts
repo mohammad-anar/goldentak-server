@@ -2,57 +2,70 @@ import { prisma } from "../../helpers/prisma.js";
 import cron from "node-cron";
 import { SyncService } from "../modules/analysis/sync.service.js";
 import { CalculationService } from "../modules/analysis/calculation.service.js";
+import { RaceStatus } from "@prisma/client";
 
 
 export const runRaceSync = async () => {
   console.log(`[${new Date().toISOString()}] Starting automatic race synchronization...`);
+  
+  // 1. Sync upcoming races
   try {
     const result = await SyncService.syncUpcomingRaces();
     console.log(`[${new Date().toISOString()}] Automatic race synchronization completed successfully. Synced ${result.count} upcoming races.`);
-    
-    try {
-      const pastResult = await SyncService.syncPastResults();
-      console.log(`[${new Date().toISOString()}] Synced ${pastResult.count} recent race results.`);
-    } catch (pastError: any) {
-      console.error(`[${new Date().toISOString()}] Error syncing recent race results:`, pastError.message);
-    }
-
-    // Warm up the bulk predictions cache
-    try {
-      await SyncService.syncBulkPredictions();
-    } catch (predError: any) {
-      console.error(`[${new Date().toISOString()}] Error caching bulk predictions:`, predError.message);
-    }
   } catch (error: any) {
-    console.error(`[${new Date().toISOString()}] Error running automatic race synchronization:`, error.message);
+    console.error(`[${new Date().toISOString()}] Error running upcoming race synchronization:`, error.message);
+  }
+
+  // 2. Sync recent race results
+  try {
+    const pastResult = await SyncService.syncPastResults();
+    console.log(`[${new Date().toISOString()}] Synced ${pastResult.count} recent race results.`);
+  } catch (pastError: any) {
+    console.error(`[${new Date().toISOString()}] Error syncing recent race results:`, pastError.message);
+  }
+
+  // 3. Warm up bulk predictions cache
+  try {
+    await SyncService.syncBulkPredictions();
+  } catch (predError: any) {
+    console.error(`[${new Date().toISOString()}] Error caching bulk predictions:`, predError.message);
   }
 };
 
 export const runPendingPredictionsUpdate = async () => {
-  console.log(`[${new Date().toISOString()}] Checking for races with ready predictions to calculate...`);
+  console.log(`[${new Date().toISOString()}] Checking for races to calculate/populate...`);
   
   try {
-    // Find races that have predictions available (hasPredictions == true),
-    // but do not have calculations completed yet (entries is empty or entries have null scores)
+    // Find:
+    // 1. Races that have predictions (hasPredictions = true) but do not have calculations completed yet
+    // 2. Upcoming/Live races that have 0 entries (so we fetch details/runners regardless of predictions)
     const racesToCalculate = await prisma.race.findMany({
       where: {
-        hasPredictions: true,
         OR: [
-          { entries: { none: {} } },
-          { entries: { some: { normalizedScore: null } } }
+          {
+            hasPredictions: true,
+            OR: [
+              { entries: { none: {} } },
+              { entries: { some: { normalizedScore: null } } }
+            ]
+          },
+          {
+            status: { in: [RaceStatus.UPCOMING, RaceStatus.LIVE] },
+            entries: { none: {} }
+          }
         ]
       }
     });
 
-    console.log(`[${new Date().toISOString()}] Found ${racesToCalculate.length} races requiring prediction calculation.`);
+    console.log(`[${new Date().toISOString()}] Found ${racesToCalculate.length} races requiring calculation/runner sync.`);
 
     for (const race of racesToCalculate) {
       try {
-        console.log(`[${new Date().toISOString()}] Auto-calculating scores for race: ${race.location} (${race.externalId})`);
+        console.log(`[${new Date().toISOString()}] Auto-calculating/populating race: ${race.location} (${race.externalId})`);
         await CalculationService.calculateRaceScores(race.id);
-        console.log(`[${new Date().toISOString()}] Auto-calculated successfully for race: ${race.location}`);
+        console.log(`[${new Date().toISOString()}] Populated successfully for race: ${race.location}`);
       } catch (error: any) {
-        console.error(`[${new Date().toISOString()}] Failed auto-calculation for race ${race.id} (${race.location}):`, error.message);
+        console.error(`[${new Date().toISOString()}] Failed calculation for race ${race.id} (${race.location}):`, error.message);
       }
     }
   } catch (error: any) {

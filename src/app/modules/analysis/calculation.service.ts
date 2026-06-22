@@ -339,25 +339,36 @@ const calculateRaceScores = async (raceId: string) => {
     console.log(
       `[Calc] No bulk cache for race ${race.externalId} — fetching from /predictions/race/${race.externalId}`
     );
-    const predictionsResponse = await rapidApi.get(`/predictions/race/${race.externalId}`);
-    const predData = predictionsResponse.data;
+    try {
+      const predictionsResponse = await rapidApi.get(`/predictions/race/${race.externalId}`);
+      const predData = predictionsResponse.data;
 
-    if (predData.status === "pending") {
-      const pendingMsg = predData.message || "Predictions for this race are currently pending.";
-      console.log(`[Calc] Predictions pending: ${pendingMsg}`);
+      if (predData.status === "pending") {
+        const pendingMsg = predData.message || "Predictions for this race are currently pending.";
+        console.log(`[Calc] Predictions pending: ${pendingMsg}`);
+        await prisma.race.update({
+          where: { id: race.id },
+          data: { predictionMessage: pendingMsg, hasPredictions: false },
+        });
+        throw new Error(pendingMsg);
+      }
+
+      apiPredictions = predData.predictions || [];
       await prisma.race.update({
         where: { id: race.id },
-        data: { predictionMessage: pendingMsg, hasPredictions: false },
+        data: { predictionMessage: null, hasPredictions: true },
       });
-      throw new Error(pendingMsg);
+      console.log(`[Calc] Individual predictions fetched. Count: ${apiPredictions.length}`);
+    } catch (e: any) {
+      if (e.message && e.message.includes("currently pending")) {
+        throw e;
+      }
+      console.log(`[Calc] Could not fetch predictions for race ${race.externalId}: ${e.message}. Proceeding with formula-only calculation.`);
+      await prisma.race.update({
+        where: { id: race.id },
+        data: { predictionMessage: `Predictions unavailable: ${e.message}`, hasPredictions: false },
+      });
     }
-
-    apiPredictions = predData.predictions || [];
-    await prisma.race.update({
-      where: { id: race.id },
-      data: { predictionMessage: null, hasPredictions: true },
-    });
-    console.log(`[Calc] Individual predictions fetched. Count: ${apiPredictions.length}`);
   }
 
   // 6. Load all DB entries for scoring

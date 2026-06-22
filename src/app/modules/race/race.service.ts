@@ -158,7 +158,7 @@ const getRaceById = async (id: string) => {
     console.error("[Redis] getRaceById read error:", e);
   }
 
-  const result = await prisma.race.findUnique({
+  let result = await prisma.race.findUnique({
     where: { id },
     include: {
       entries: {
@@ -179,6 +179,46 @@ const getRaceById = async (id: string) => {
       }
     }
   });
+
+  // On-demand calculate/fetch if race has 0 entries in DB
+  if (result && result.entries.length === 0) {
+    try {
+      console.log(`[RaceService] Race ${id} has 0 entries in DB. Running calculation on-demand...`);
+      await CalculationService.calculateRaceScores(id);
+      
+      // Invalidate cache and refetch
+      try {
+        await redisClient.del(cacheKey);
+        await redisClient.del(`races:stats:${id}`);
+      } catch (cacheErr) {
+        console.warn("[Redis] Cache invalidation failed:", cacheErr);
+      }
+
+      result = await prisma.race.findUnique({
+        where: { id },
+        include: {
+          entries: {
+            include: {
+              horse: true,
+              jockey: true,
+            },
+            orderBy: [
+              { rank: 'asc' },
+              { normalizedScore: 'desc' }
+            ]
+          },
+          results: {
+            include: {
+              horse: true,
+              jockey: true,
+            }
+          }
+        }
+      });
+    } catch (err: any) {
+      console.error(`[RaceService] On-demand calculation failed for race ${id}:`, err.message);
+    }
+  }
 
   try {
     if (result) {

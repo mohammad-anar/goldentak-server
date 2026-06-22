@@ -25,6 +25,16 @@ export function getPredictionCache(): PredictionCache | null {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper function to chunk array for parallel execution
+const chunkArray = <T>(array: T[], size: number): T[][] => {
+  const chunked: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunked.push(array.slice(i, i + size));
+  }
+  return chunked;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SYNC UPCOMING RACES
 // Calls /races/upcoming?days=3 to upsert upcoming race cards into the DB.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,6 +48,7 @@ const syncUpcomingRaces = async (days: number = 3) => {
       console.log("[Sync] First card sample:", JSON.stringify(races[0]).substring(0, 500));
     }
 
+    console.log(`[Sync] Synced ${races.length} upcoming races from API. Saving sequentially...`);
     for (const card of races) {
       const externalId = card.id.toString();
 
@@ -101,12 +112,25 @@ const syncBulkPredictions = async (days: number = 3): Promise<PredictionCache> =
 
   const byRaceId = new Map<string, any[]>();
 
-  for (const raceBlock of rawData) {
-    const raceId = raceBlock.race_id?.toString() ?? raceBlock.id?.toString();
-    const preds: any[] = raceBlock.predictions ?? (Array.isArray(raceBlock) ? raceBlock : []);
+  for (const item of rawData) {
+    if (!item) continue;
 
-    if (raceId && preds.length > 0) {
-      byRaceId.set(raceId, preds);
+    // Format A: Race block containing a predictions array (e.g. fallback json schema)
+    if (Array.isArray(item.predictions)) {
+      const raceId = item.race_id?.toString() ?? item.id?.toString();
+      if (raceId && item.predictions.length > 0) {
+        byRaceId.set(raceId, item.predictions);
+      }
+    } 
+    // Format B: Flat prediction item containing race_id directly (real Rapid API response)
+    else {
+      const raceId = item.race_id?.toString();
+      if (raceId) {
+        if (!byRaceId.has(raceId)) {
+          byRaceId.set(raceId, []);
+        }
+        byRaceId.get(raceId)!.push(item);
+      }
     }
   }
 
@@ -119,6 +143,24 @@ const syncBulkPredictions = async (days: number = 3): Promise<PredictionCache> =
   console.log(
     `[Sync] Bulk predictions cached: ${byRaceId.size} races, ${totalPreds} total horse predictions.`
   );
+
+  // Update hasPredictions flag in database for all races in the bulk cache
+  const foundRaceIds = Array.from(byRaceId.keys());
+  if (foundRaceIds.length > 0) {
+    try {
+      await prisma.race.updateMany({
+        where: {
+          externalId: { in: foundRaceIds },
+        },
+        data: {
+          hasPredictions: true,
+        },
+      });
+      console.log(`[Sync] Marked ${foundRaceIds.length} races as having predictions in DB.`);
+    } catch (dbErr: any) {
+      console.warn(`[Sync] Failed to update hasPredictions flags in DB:`, dbErr.message);
+    }
+  }
 
   return _predictionCache;
 };
@@ -133,6 +175,8 @@ const syncPastResults = async (days: number = 3) => {
     const response = await rapidApi.get(`/races/results?days=${days}`);
     const races = response.data?.data || [];
 
+    console.log(`[Sync] API returned ${races.length} races. Upserting sequentially to protect connection pool...`);
+    let count = 0;
     for (const card of races) {
       const externalId = card.id.toString();
 
@@ -173,6 +217,11 @@ const syncPastResults = async (days: number = 3) => {
         },
         create: raceData,
       });
+
+      count++;
+      if (count % 100 === 0) {
+        console.log(`[Sync] Progress: upserted ${count}/${races.length} races...`);
+      }
     }
 
     await clearRaceCache();
