@@ -483,6 +483,71 @@ const sendSubscriptionNotification = async (
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FREE TRIAL WELCOME NOTIFICATION
+// Sent once when a brand-new device user logs in for the first time.
+// ─────────────────────────────────────────────────────────────────────────────
+const createTrialNotification = async (userId: string, trialEndDate: string) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fcmToken: true, language: true },
+    });
+
+    if (!user) return;
+
+    const lang = (user.language || "en").toLowerCase();
+
+    const templates: Record<string, { title: string; message: string }> = {
+      en: {
+        title: "🎉 Welcome! Your 3-Day Free Trial Has Started",
+        message: `You now have full access to all premium AI predictions for free until ${trialEndDate}. Enjoy the full experience — subscribe to continue after your trial ends!`,
+      },
+      tr: {
+        title: "🎉 Hoş Geldiniz! 3 Günlük Ücretsiz Denemeniz Başladı",
+        message: `${trialEndDate} tarihine kadar tüm premium yapay zeka tahminlerine ücretsiz erişiminiz var. Deneme süreniz sona erdikten sonra devam etmek için abone olun!`,
+      },
+      ar: {
+        title: "🎉 مرحباً! بدأت تجربتك المجانية لمدة 3 أيام",
+        message: `أنت الآن تتمتع بالوصول الكامل لجميع توقعات الذكاء الاصطناعي المميزة مجاناً حتى ${trialEndDate}. استمتع بالتجربة الكاملة — اشترك للاستمرار بعد انتهاء فترة تجربتك!`,
+      },
+    };
+
+    const template = templates[lang] || templates["en"];
+
+    // Create DB notification
+    const notification = await prisma.notification.create({
+      data: {
+        userId,
+        type: NotificationType.SYSTEM,
+        title: template.title,
+        message: template.message,
+      },
+    });
+
+    // Emit via Socket.io
+    try {
+      emitNotification(userId, notification);
+    } catch (err) {
+      console.error("Socket emit failed for trial notification:", err);
+    }
+
+    // Send push notification
+    if (user.fcmToken) {
+      try {
+        await sendPushNotification(user.fcmToken, {
+          title: template.title,
+          body: template.message,
+        });
+      } catch (err) {
+        console.error("FCM push failed for trial notification:", err);
+      }
+    }
+  } catch (error) {
+    console.error(`[Notification] Error sending trial notification to user ${userId}:`, error);
+  }
+};
+
 export const NotificationService = {
   createNotification,
   notifyAdmins,
@@ -496,4 +561,6 @@ export const NotificationService = {
   sendRaceNotification,
   handleRaceStatusChange,
   sendSubscriptionNotification,
+  createTrialNotification,
 };
+

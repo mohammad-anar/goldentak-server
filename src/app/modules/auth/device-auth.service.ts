@@ -2,26 +2,59 @@ import { prisma } from "../../../helpers/prisma.js";
 import { jwtHelper } from "../../../helpers/jwtHelper.js";
 import config from "../../../config/index.js";
 import { Secret } from "jsonwebtoken";
+import { NotificationService } from "../notification/notification.service.js";
+
+// ── FREE TRIAL DURATION ───────────────────────────────────────────────────────
+const FREE_TRIAL_DAYS = 3;
 
 const deviceLogin = async (deviceId: string) => {
   // 1. Find or Create User
+  let isNewUser = false;
   let user = await prisma.user.findUnique({
     where: { deviceId },
     include: { subscription: true }
   });
 
   if (!user) {
+    isNewUser = true;
     user = await prisma.user.create({
       data: { deviceId },
       include: { subscription: true }
     });
   }
 
-  // 2. Prepare Subscription Info
-  const subscription = user.subscription;
-  const isActive = subscription ? (subscription.isActive && new Date(subscription.endDate) > new Date()) : false;
+  // 2. Auto-grant FREE TRIAL for brand-new users (first login ever)
+  if (isNewUser && !user.subscription) {
+    const trialStart = new Date();
+    const trialEnd = new Date();
+    trialEnd.setDate(trialStart.getDate() + FREE_TRIAL_DAYS);
 
-  // 3. Generate JWT
+    user.subscription = await prisma.subscription.create({
+      data: {
+        userId: user.id,
+        plan: "TRIAL",
+        startDate: trialStart,
+        endDate: trialEnd,
+        isActive: true,
+      },
+    });
+
+    // Send a welcome trial notification (non-blocking)
+    const trialEndStr = trialEnd.toLocaleDateString();
+    NotificationService.createTrialNotification(user.id, trialEndStr).catch(
+      (err) => console.error("[DeviceAuth] Failed to send trial notification:", err)
+    );
+
+    console.log(`[DeviceAuth] 3-day free trial granted to new user: ${user.id} (expires: ${trialEnd.toISOString()})`);
+  }
+
+  // 3. Prepare Subscription Info
+  const subscription = user.subscription;
+  const isActive = subscription
+    ? subscription.isActive && new Date(subscription.endDate) > new Date()
+    : false;
+
+  // 4. Generate JWT
   const token = jwtHelper.createToken(
     { 
       userId: user.id, 
