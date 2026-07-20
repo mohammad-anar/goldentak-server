@@ -92,6 +92,16 @@ const handleAppleWebhook = catchAsync(async (req: Request, res: Response) => {
   res.status(StatusCodes.OK).json(result);
 });
 
+const getPlans = catchAsync(async (req: Request, res: Response) => {
+  const result = await SubscriptionService.getPlans();
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Subscription plans fetched successfully",
+    data: result,
+  });
+});
+
 export const SubscriptionController = {
   createSubscription,
   getSubscriptionOverview,
@@ -100,4 +110,5 @@ export const SubscriptionController = {
   verifyAppleSubscription,
   handleGoogleWebhook,
   handleAppleWebhook,
+  getPlans,
 };

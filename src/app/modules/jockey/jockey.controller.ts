@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
-import { HorseService } from "./horse.service.js";
+import { JockeyService } from "./jockey.service.js";
 
-const searchHorses = async (req: Request, res: Response) => {
+const searchJockeys = async (req: Request, res: Response) => {
   try {
     const name = req.query.name as string;
     if (!name) {
@@ -11,11 +11,11 @@ const searchHorses = async (req: Request, res: Response) => {
         message: "Query parameter 'name' is required",
       });
     }
-    const result = await HorseService.searchHorses(name);
+    const jockeys = await JockeyService.searchJockeys(name);
     res.status(StatusCodes.OK).json({
       success: true,
-      message: "Horses fetched successfully",
-      data: result,
+      message: "Jockeys retrieved successfully",
+      data: jockeys,
     });
   } catch (error: any) {
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
@@ -25,14 +25,14 @@ const searchHorses = async (req: Request, res: Response) => {
   }
 };
 
-const getHorseById = async (req: Request, res: Response) => {
+const getJockeyById = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const result = await HorseService.getHorseById(id);
+    const jockey = await JockeyService.getJockeyById(id);
     res.status(StatusCodes.OK).json({
       success: true,
-      message: "Horse fetched successfully",
-      data: result,
+      message: "Jockey details retrieved successfully",
+      data: jockey,
     });
   } catch (error: any) {
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
@@ -42,21 +42,21 @@ const getHorseById = async (req: Request, res: Response) => {
   }
 };
 
-const getHorseAnalysis = async (req: Request, res: Response) => {
+const getJockeyAnalysis = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
     const type = req.params.type as string;
-    if (!["distances", "going", "courses", "classes", "seasons"].includes(type)) {
+    if (!["courses", "distances", "trainers", "owners"].includes(type)) {
       return res.status(StatusCodes.BAD_REQUEST).json({
         success: false,
-        message: "Invalid analysis type. Allowed: distances, going, courses, classes, seasons",
+        message: "Invalid analysis type. Allowed: courses, distances, trainers, owners",
       });
     }
-    const result = await HorseService.getHorseAnalysis(id, type as any);
+    const analysis = await JockeyService.getJockeyAnalysis(id, type as any);
     res.status(StatusCodes.OK).json({
       success: true,
-      message: `Horse analysis (${type}) fetched successfully`,
-      data: result,
+      message: `Jockey analysis (${type}) retrieved successfully`,
+      data: analysis,
     });
   } catch (error: any) {
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
@@ -66,8 +66,8 @@ const getHorseAnalysis = async (req: Request, res: Response) => {
   }
 };
 
-export const HorseController = {
-  searchHorses,
-  getHorseById,
-  getHorseAnalysis,
+export const JockeyController = {
+  searchJockeys,
+  getJockeyById,
+  getJockeyAnalysis,
 };

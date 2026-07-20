@@ -1,0 +1,174 @@
+// ─── ALGORITHM SETTINGS ───────────────────────────────────────────────────────
+// Stores the configurable weights used by CalculationService.
+// Default values are sourced from ARGOLİTMA.xlsx (row 2 parameters).
+//
+// Keys and default values:
+//   WEIGHT_HORSE     = 45   (horsePower × 45)
+//   WEIGHT_JOCKEY    = 35   (jockeyPower × 35)
+//   WEIGHT_SIRE      = 8    (sirePower × 8)
+//   WEIGHT_DAM       = 6    (damPower × 6)
+//   WEIGHT_DAMSIRE   = 2    (damSirePower × 2)
+//   WEIGHT_PEDIGREE  = 5    (pedigreePower × 5)
+//   WEIGHT_EARNING   = 5    (earningPower × 5)
+//   WEIGHT_WEIGHT    = 10   (weightEffect × 10)
+//   THRESH_SMALL     = 0.15  (diff ≤ rank1×15% → SMALL/KÜÇÜK)
+//   THRESH_MEDIUM    = 0.30  (diff ≤ rank1×30% → MEDIUM/ORTA)
+//   THRESH_BIG       = 0.40  (diff ≤ rank1×40% → BIG/BÜYÜK)
+//
+model AlgorithmSetting {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  value       Float
+  label       String
+  description String?
+  category    String? // "horse" | "jockey" | "sire" | "dam" | "damsire" | "pedigree" | "earning" | "weight" | "threshold"
+  minValue    Float?
+  maxValue    Float?
+  isActive    Boolean @default(true)
+  updatedBy   String?
+
+  history AlgorithmSettingHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("algorithm_settings")
+}
+
+model AlgorithmSettingHistory {
+  id        String @id @default(cuid())
+  settingId String
+  oldValue  Float
+  newValue  Float
+  changedBy String
+  note      String?
+
+  setting AlgorithmSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("algorithm_setting_history")
+}
+
+// ─── ALGORITHM RUN LOG ────────────────────────────────────────────────────────
+// Tracks every time CalculationService runs for a race.
+// Each run produces a PredictionScoreLog per runner.
+//
+model AlgorithmRun {
+  id               String     @id @default(cuid())
+  raceId           String
+  triggeredBy      String     // "cron" | "manual" | "worker"
+  status           SyncStatus @default(PENDING)
+  startedAt        DateTime   @default(now())
+  completedAt      DateTime?
+  durationMs       Int?
+  runnersProcessed Int        @default(0)
+  error            String?
+
+  scoreLogs PredictionScoreLog[]
+
+  @@index([raceId])
+  @@index([status])
+  @@map("algorithm_runs")
+}
+
+// Stores per-runner score breakdown for every algorithm run.
+// Matches the exact columns from ARGOLİTMA.xlsx.
+//
+model PredictionScoreLog {
+  id             String @id @default(cuid())
+  algorithmRunId String
+  raceEntryId    String
+  horseName      String
+
+  // ── Power inputs (column 31–38 of spreadsheet) ───────────────────────────
+  horsePower    Float?              // (wins×4 + 2nds×3 + 3rds×2 + 4ths×1) / totalRaces
+  jockeyPower   Float?              // jockey equivalent
+  sirePower     Float?              // sire offspring power (Racing API)
+  damPower      Float?              // dam progeny power   (Racing API)
+  damSirePower  Float?              // dam's sire power    (Racing API)
+  pedigreePower Float?              // avg(sire, dam, damSire)
+  earningPower  Float?              // (horseAvg / fieldAvg) − 1
+  weightEffect  Float?              // (avgWeight − horseWeight) / avgWeight
+
+  // ── Weighted score components (columns 40–47 of spreadsheet) ─────────────
+  horseScore    Float?              // horsePower × 45
+  jockeyScore   Float?              // jockeyPower × 35
+  sireScore     Float?              // sirePower × 8
+  damScore      Float?              // damPower × 6
+  damSireScore  Float?              // damSirePower × 2
+  pedigreeScore Float?              // pedigreePower × 5
+  earningScore  Float?              // earningPower × 5
+  weightScore   Float?              // weightEffect × 10
+
+  // ── Final results ─────────────────────────────────────────────────────────
+  rawScore        Float?            // sum of all weighted scores
+  normalizedScore Float?            // normalised score (0-100)
+  rank            Int?              // 1 = highest rawScore in field
+  category        String?           // "SMALL" | "MEDIUM" | "BIG" | "X"
+  diffFromTop     Float?            // rawScore[rank1] - rawScore[this]
+
+  algorithmRun AlgorithmRun @relation(fields: [algorithmRunId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([algorithmRunId])
+  @@index([raceEntryId])
+  @@map("prediction_score_logs")
+}
+
+// ─── SYNC & OPERATION LOGS ────────────────────────────────────────────────────
+
+model SyncLog {
+  id               String     @id @default(cuid())
+  service          String     // "RaceSyncService" | "EnrichmentService" etc.
+  status           SyncStatus
+  jobId            String?
+  startedAt        DateTime   @default(now())
+  completedAt      DateTime?
+  durationMs       Int?
+  recordsProcessed Int        @default(0)
+  error            String?    @db.Text
+  metadata         Json?
+
+  @@index([service, startedAt])
+  @@index([status])
+  @@map("sync_logs")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String   // "ALGO_SETTING_CHANGED" | "SUBSCRIPTION_GRANTED" etc.
+  entity    String?
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model QueueJobLog {
+  id          String    @id @default(cuid())
+  queueName   String
+  jobId       String    @unique
+  jobName     String
+  status      JobStatus
+  attempt     Int       @default(1)
+  data        Json?
+  result      Json?
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([queueName, status])
+  @@map("queue_job_logs")
+}

@@ -12,8 +12,12 @@ const createOrUpdate = async (type: string, content: string) => {
 
 
 const getByType = async (type: string) => {
+  const mappedType = type.toUpperCase() === 'TERMS' ? 'TERMS_AND_CONDITIONS' :
+                     type.toUpperCase() === 'PRIVACY' ? 'PRIVACY_POLICY' :
+                     type.toUpperCase();
+
   let result = await prisma.legalDocument.findUnique({
-    where: { type },
+    where: { type: mappedType },
   });
 
   if (!result) {
@@ -23,12 +27,11 @@ const getByType = async (type: string) => {
       ABOUT_US: "<h1>About Us</h1><p>GoldenTak is your premier horse racing analysis and AI prediction platform.</p>"
     };
 
-    const uppercaseType = type.toUpperCase();
-    if (defaultContents[uppercaseType]) {
+    if (defaultContents[mappedType]) {
       result = await prisma.legalDocument.create({
         data: {
-          type: uppercaseType,
-          content: defaultContents[uppercaseType]
+          type: mappedType,
+          content: defaultContents[mappedType]
         }
       });
     }

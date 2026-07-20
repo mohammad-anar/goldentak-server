@@ -446,6 +446,38 @@ const handleAppleWebhook = async (signedPayload: string) => {
   }
 };
 
+const getPlans = async () => {
+  return [
+    {
+      id: "weekly",
+      name: "1 Week",
+      description: "Weekly Premium Access",
+      price: 4.99,
+      currency: "USD",
+      duration: "WEEKLY",
+      productId: "com.whichwin.horseracing.weekly",
+    },
+    {
+      id: "monthly",
+      name: "1 Month",
+      description: "Monthly Premium Access",
+      price: 11.99,
+      currency: "USD",
+      duration: "MONTHLY",
+      productId: "com.whichwin.horseracing.monthly",
+    },
+    {
+      id: "yearly",
+      name: "1 Year",
+      description: "Yearly Premium Access",
+      price: 59.99,
+      currency: "USD",
+      duration: "YEARLY",
+      productId: "com.whichwin.horseracing.yearly",
+    },
+  ];
+};
+
 export const SubscriptionService = {
   createSubscription,
   getSubscriptionByUserId,
@@ -454,4 +486,5 @@ export const SubscriptionService = {
   verifyAppleSubscription,
   handleGoogleWebhook,
   handleAppleWebhook,
+  getPlans,
 };

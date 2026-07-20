@@ -284,7 +284,7 @@ const getApiStats = async () => {
     select: { updatedAt: true },
   });
 
-  const apiStatus = process.env.RAPID_API_SECRET_KEY ? "Active" : "Inactive";
+  const apiStatus = (process.env.RACING_API_KEY && process.env.RACING_API_SECRET) ? "Active" : "Inactive";
   const lastSyncTime = lastRace ? lastRace.updatedAt : null;
 
   // Query recently synced races

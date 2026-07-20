@@ -23,7 +23,7 @@ const getAllNewsletters = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getNewsletterById = catchAsync(async (req: Request, res: Response) => {
-  const result = await NewsletterService.getNewsletterById(req.params.id);
+  const result = await NewsletterService.getNewsletterById(req.params.id as string);
   sendResponse(res, { statusCode: 200, success: true, message: "Newsletter retrieved successfully", data: result });
 });
 
@@ -33,12 +33,12 @@ const updateNewsletter = catchAsync(async (req: Request, res: Response) => {
     req.body.image = image;
   }
 
-  const result = await NewsletterService.updateNewsletter(req.params.id, req.body);
+  const result = await NewsletterService.updateNewsletter(req.params.id as string, req.body);
   sendResponse(res, { statusCode: 200, success: true, message: "Newsletter updated successfully", data: result });
 });
 
 const deleteNewsletter = catchAsync(async (req: Request, res: Response) => {
-  const result = await NewsletterService.deleteNewsletter(req.params.id);
+  const result = await NewsletterService.deleteNewsletter(req.params.id as string);
   sendResponse(res, { statusCode: 200, success: true, message: "Newsletter deleted successfully", data: result });
 });
 

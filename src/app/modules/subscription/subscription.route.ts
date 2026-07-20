@@ -10,6 +10,7 @@ router.get("/me", auth(), SubscriptionController.getMySubscriptionStatus);
 router.post("/", auth("ADMIN"), SubscriptionController.createSubscription);
 
 // Purchase Verification Endpoints (unauthenticated, deviceId provided in body)
+router.get("/plans", SubscriptionController.getPlans);
 router.post("/google/verify", SubscriptionController.verifyGoogleSubscription);
 router.post("/apple/verify", SubscriptionController.verifyAppleSubscription);
 

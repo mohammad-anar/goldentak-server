@@ -1,158 +1,670 @@
-model Horse {
-  id          String  @id @default(cuid())
-  externalId  String? @unique
-  name        String  @unique
-  age         Int?
-  color       String?
-  sex         String?
-  sireName    String? // Father
-  damName     String? // Mother
-  damSireName String? // Mother's Father
-  owner       String?
-  trainer     String?
-  country     String?
-  bestTime    String?
-  bestTimeLocation String?
+// ─────────────────────────────────────────────────────────────────────────────
+// PRISMA SCHEMA: horse_racing.prisma
+//
+// Maps The Racing API (Pro Plan) endpoints to database models.
+// Algorithm weights (from ARGOLİTMA.xlsx):
+//   Horse=45, Jockey=35, Sire=8, Dam=6, DamSire=2, Pedigree=5, Earning=5, Weight=10
+//   Categories: SMALL(diff≤15%), MEDIUM(≤30%), BIG(≤40%), X(>40%)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Denormalized stats for fast calculation
-  totalRaces    Int       @default(0)
-  wins          Int       @default(0)
-  seconds       Int       @default(0)
-  thirds        Int       @default(0)
-  fourths       Int       @default(0)
-  totalEarnings Float     @default(0)
-  lastRaceDate  DateTime?
+// ─── SIRE ─────────────────────────────────────────────────────────────────────
+// Source: /v1/sires/search, /v1/sires/{sire_id}/results, /v1/sires/{sire_id}/analysis/distances
+// Used by algorithm: sirePower = (wins×4 + 2nds×3 + 3rds×2 + 4ths×1) / totalOffspring
+//
+model Sire {
+  id         String @id @default(cuid())
+  externalId String @unique          // Racing API sire_id
+  name       String @unique
 
-  // Pedigree Stats (Cached from offspring performance)
-  sireWinRate      Float?
-  sirePlaceRate    Float?
-  damWinRate       Float?
-  damPlaceRate     Float?
-  damSireWinRate   Float?
-  damSirePlaceRate Float?
+  // Offspring career totals (from /v1/sires/{sire_id}/results — aggregated)
+  totalOffspring Int   @default(0)   // total offspring race runs
+  wins           Int   @default(0)
+  seconds        Int   @default(0)
+  thirds         Int   @default(0)
+  fourths        Int   @default(0)
+
+  // Cached power score (saves recomputing each prediction run)
+  winRate        Float?              // wins / totalOffspring
+  placeRate      Float?              // (wins+seconds+thirds) / totalOffspring
+  power          Float?              // (w×4 + 2×3 + 3×2 + 4×1) / total
+
+  // Distance analysis from /v1/sires/{sire_id}/analysis/distances
+  distanceAnalysis Json?
+
+  // Class analysis from /v1/sires/{sire_id}/analysis/classes
+  classAnalysis Json?
+
+  enrichedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  horses    Horse[]
+
+  @@index([name])
+  @@map("sires")
+}
+
+// ─── DAM ──────────────────────────────────────────────────────────────────────
+// Source: /v1/dams/search, /v1/dams/{dam_id}/results, /v1/dams/{dam_id}/analysis/distances
+// Used by algorithm: damPower = (wins×4 + 2nds×3 + 3rds×2 + 4ths×1) / totalProgeny
+//
+model Dam {
+  id         String @id @default(cuid())
+  externalId String @unique          // Racing API dam_id
+  name       String @unique
+
+  // Progeny career totals (from /v1/dams/{dam_id}/results — aggregated)
+  totalProgeny Int   @default(0)     // total progeny race runs
+  wins         Int   @default(0)
+  seconds      Int   @default(0)
+  thirds       Int   @default(0)
+  fourths      Int   @default(0)
+
+  // Cached power score
+  winRate      Float?
+  placeRate    Float?
+  power        Float?                // (w×4 + 2×3 + 3×2 + 4×1) / total
+
+  // Distance analysis from /v1/dams/{dam_id}/analysis/distances
+  distanceAnalysis Json?
+
+  // Class analysis from /v1/dams/{dam_id}/analysis/classes
+  classAnalysis Json?
+
+  enrichedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  horses Horse[]
+
+  @@index([name])
+  @@map("dams")
+}
+
+// ─── DAMSIRE ──────────────────────────────────────────────────────────────────
+// Source: /v1/damsires/search, /v1/damsires/{damsire_id}/results
+// Used by algorithm: damSirePower — the sire of the dam (maternal grandsire)
+//
+model DamSire {
+  id         String @id @default(cuid())
+  externalId String @unique          // Racing API damsire_id
+  name       String @unique
+
+  totalOffspring Int   @default(0)
+  wins           Int   @default(0)
+  seconds        Int   @default(0)
+  thirds         Int   @default(0)
+  fourths        Int   @default(0)
+
+  winRate  Float?
+  placeRate Float?
+  power    Float?
+
+  distanceAnalysis Json?
+  classAnalysis    Json?
+
+  enrichedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  horses Horse[]
+
+  @@index([name])
+  @@map("dam_sires")
+}
+
+// ─── TRAINER ─────────────────────────────────────────────────────────────────
+// Source: /v1/trainers/search, /v1/trainers/{trainer_id}/results
+// Source: /v1/trainers/{trainer_id}/analysis/courses
+//         /v1/trainers/{trainer_id}/analysis/distances
+//         /v1/trainers/{trainer_id}/analysis/jockeys
+//         /v1/trainers/{trainer_id}/analysis/horse-age
+//
+model Trainer {
+  id         String  @id @default(cuid())
+  externalId String? @unique         // Racing API trainer_id
+  name       String  @unique
+  location   String?
+  country    String?
+
+  // Career stats from /v1/trainers/{trainer_id}/results (aggregated)
+  totalRuns     Int   @default(0)
+  wins          Int   @default(0)
+  seconds       Int   @default(0)
+  thirds        Int   @default(0)
+  fourths       Int   @default(0)
+  totalEarnings Float @default(0)
+
+  // Recent form (rolling 30-day window)
+  runsLast30d Int @default(0)
+  winsLast30d Int @default(0)
+
+  // Analysis JSON blobs from API
+  courseAnalysis   Json?             // /v1/trainers/{id}/analysis/courses
+  distanceAnalysis Json?             // /v1/trainers/{id}/analysis/distances
+  jockeyAnalysis   Json?             // /v1/trainers/{id}/analysis/jockeys
+  horseAgeAnalysis Json?             // /v1/trainers/{id}/analysis/horse-age
+
+  enrichedAt     DateTime?
+  enrichedSource String?             // "api" | "manual"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   entries RaceEntry[]
-  results RaceResult[]
 
+  @@index([name])
+  @@map("trainers")
+}
+
+// ─── OWNER ────────────────────────────────────────────────────────────────────
+// Source: racecard runner.owner / runner.owner_id fields
+// Source: /v1/owners/{owner_id}/analysis/jockeys
+//         /v1/owners/{owner_id}/analysis/trainers
+//
+model Owner {
+  id         String  @id @default(cuid())
+  externalId String? @unique         // Racing API owner_id
+  name       String  @unique
+  country    String?
+
+  // Analysis JSON blobs from API
+  jockeyAnalysis  Json?              // /v1/owners/{id}/analysis/jockeys
+  trainerAnalysis Json?              // /v1/owners/{id}/analysis/trainers
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries RaceEntry[]
+
+  @@index([name])
+  @@map("owners")
+}
+
+// ─── RACECOURSE ───────────────────────────────────────────────────────────────
+// Source: course_id from racecards, course details
+//
+model Racecourse {
+  id         String  @id @default(cuid())
+  externalId String? @unique         // Racing API course_id
+  name       String  @unique
+  country    String?
+  region     String?                 // "gb" | "ire" | "usa" | "aus" | "fr" | "za" | "uae"
+  surface    String?                 // "Turf" | "Sand" | "Synthetic" | "Mixed"
+  latitude   Float?
+  longitude  Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  meetings Meeting[]
+
+  @@map("racecourses")
+}
+
+// ─── MEETING ─────────────────────────────────────────────────────────────────
+// Source: racecard course/date grouping
+//
+model Meeting {
+  id           String  @id @default(cuid())
+  externalId   String? @unique
+  name         String?
+  date         DateTime
+  racecourseId String?
+  location     String
+  country      String  @default("United Kingdom")
+  surface      String?
+  going        String?
+  region       String?               // "gb" | "ire" | "usa" | "aus" | "fr" | "za" | "uae"
+
+  racecourse Racecourse? @relation(fields: [racecourseId], references: [id])
+  races      Race[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([region])
+  @@map("meetings")
+}
+
+// ─── HORSE ────────────────────────────────────────────────────────────────────
+// Source: racecard runner data + /v1/horses/{horse_id}/pro
+//         /v1/horses/{horse_id}/results  (career totals)
+//         /v1/horses/{horse_id}/analysis/distance-times
+//
+model Horse {
+  id          String  @id @default(cuid())
+  externalId  String? @unique        // Racing API horse_id
+  name        String  @unique
+
+  // Identity (from racecard runner + /v1/horses/{id}/pro)
+  age         Int?
+  colour      String?
+  sex         String?                // "c" | "f" | "g" | "m" | "h"
+  sexCode     String?
+  dob         String?                // date of birth
+  breeder     String?
+  country     String?
+  region      String?
+
+  // Pedigree names (from racecard runner data)
+  sireName    String?
+  damName     String?
+  damSireName String?
+  owner       String?
+  trainer     String?
+
+  // Pedigree regions (from racecard runner data)
+  sireRegion    String?
+  damRegion     String?
+  damSireRegion String?
+
+  sireId        String?             // API Sire ID
+  damId         String?             // API Dam ID
+  damSireId     String?             // API DamSire ID
+
+  // Foreign keys to Sire / Dam / DamSire models (populated after enrichment)
+  sireModelId    String?             // → Sire.id
+  damModelId     String?             // → Dam.id
+  damSireModelId String?             // → DamSire.id
+
+  sireModel    Sire?    @relation(fields: [sireModelId],    references: [id])
+  damModel     Dam?     @relation(fields: [damModelId],     references: [id])
+  damSireModel DamSire? @relation(fields: [damSireModelId], references: [id])
+
+  // Career stats — updated from /v1/horses/{horse_id}/results (aggregated)
+  totalRaces    Int   @default(0)
+  wins          Int   @default(0)
+  seconds       Int   @default(0)
+  thirds        Int   @default(0)
+  fourths       Int   @default(0)
+  totalEarnings Float @default(0)
+
+  // Recent form windows (from career results filtered by date)
+  runsLast30d Int @default(0)
+  winsLast30d Int @default(0)
+  runsLast90d Int @default(0)
+  winsLast90d Int @default(0)
+
+  // Cached pedigree power scores (from Sire/Dam/DamSire models)
+  // Updated by enrichment worker after Sire/Dam are populated
+  sirePower        Float?            // = Sire.power
+  sirePlaceRate    Float?            // = Sire.placeRate
+  damPower         Float?            // = Dam.power
+  damPlaceRate     Float?            // = Dam.placeRate
+  damSirePower     Float?            // = DamSire.power
+  damSirePlaceRate Float?            // = DamSire.placeRate
+
+  // Horse-level analysis (from /v1/horses/{id}/analysis/distance-times)
+  distanceAnalysis Json?
+  goingAnalysis    Json?
+  courseAnalysis   Json?
+  classAnalysis    Json?
+  seasonAnalysis   Json?
+  
+  // Best time record
+  bestTime         String?
+  bestTimeLocation String?
+  lastRaceDate     DateTime?
+
+  enrichedAt     DateTime?
+  enrichedSource String?             // "api" | "manual"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries    RaceEntry[]
+  results    RaceResult[]
+  images     HorseImage[]
+  statistics HorseStatistic[]
+  ratings    HorseRating[]
+  favorites  Favorite[]
+
+  @@index([name])
+  @@index([externalId])
   @@map("horses")
 }
 
+model HorseImage {
+  id        String  @id @default(cuid())
+  horseId   String
+  url       String
+  s3Key     String?
+  isPrimary Boolean @default(false)
+  source    String?
+
+  horse Horse @relation(fields: [horseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("horse_images")
+}
+
+model HorseStatistic {
+  id       String  @id @default(cuid())
+  horseId  String
+  course   String?
+  distance String?
+  surface  String?
+  going    String?
+
+  runs     Int   @default(0)
+  wins     Int   @default(0)
+  places   Int   @default(0)
+  earnings Float @default(0)
+
+  horse Horse @relation(fields: [horseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([horseId, course, distance, surface, going])
+  @@map("horse_statistics")
+}
+
+model HorseRating {
+  id      String    @id @default(cuid())
+  horseId String
+  type    String    // "OR" | "RPR" | "TS" | "BHA"
+  value   Float
+  date    DateTime?
+
+  horse Horse @relation(fields: [horseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([horseId, type])
+  @@map("horse_ratings")
+}
+
+// ─── JOCKEY ───────────────────────────────────────────────────────────────────
+// Source: racecard runner.jockey + /v1/jockeys/search
+//         /v1/jockeys/{jockey_id}/results (career totals)
+//         /v1/jockeys/{jockey_id}/analysis/courses
+//         /v1/jockeys/{jockey_id}/analysis/distances
+//         /v1/jockeys/{jockey_id}/analysis/trainers
+//
 model Jockey {
   id         String  @id @default(cuid())
-  externalId String? @unique
-  name       String
+  externalId String? @unique         // Racing API jockey_id
+  name       String  @unique
 
-  // Career stats
-  totalRides Int @default(0)
-  wins       Int @default(0)
-  seconds    Int @default(0)
-  thirds     Int @default(0)
-  fourths    Int @default(0)
+  // Career totals from /v1/jockeys/{jockey_id}/results (aggregated)
+  totalRides Int   @default(0)
+  wins       Int   @default(0)
+  seconds    Int   @default(0)
+  thirds     Int   @default(0)
+  fourths    Int   @default(0)
 
-  // Recent form
+  // Recent form (rolling 30-day window)
   ridesLast30d Int @default(0)
   winsLast30d  Int @default(0)
 
+  // Analysis JSON blobs from API
+  courseAnalysis   Json?             // /v1/jockeys/{id}/analysis/courses
+  distanceAnalysis Json?             // /v1/jockeys/{id}/analysis/distances
+  trainerAnalysis  Json?             // /v1/jockeys/{id}/analysis/trainers
+  ownerAnalysis    Json?             // /v1/jockeys/{id}/analysis/owners
+
+  enrichedAt     DateTime?
+  enrichedSource String?             // "api" | "manual"
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   entries RaceEntry[]
   results RaceResult[]
 
+  @@index([name])
   @@map("jockeys")
 }
 
+// ─── RACE ─────────────────────────────────────────────────────────────────────
+// Source: /v1/racecards/pro, /v1/racecards/{race_id}/pro
+//         /v1/results (past races)
+//
 model Race {
   id         String     @id @default(cuid())
-  externalId String     @unique
-  name       String?
+  externalId String     @unique      // Racing API race_id
+  meetingId  String?
+  name       String?                 // race_name from API
   date       DateTime
-  time       String
-  location   String
+  time       String                  // off_time from API
+  location   String                  // course from API
   country    String     @default("United Kingdom")
-  trackType  String? // Turf, Sand, Synthetic
-  distance   String?
-  prize      String?
+  region     String?                 // "gb" | "ire" | "usa" | "aus" | "fr" | "za" | "uae"
+  trackType  String?                 // "Turf" | "Sand" | "Synthetic" etc.
+  surface    String?                 // "Turf" | "Sand" | "Synthetic"
+  distance   String?                 // e.g. "6f" or "1200m"
+  distanceF  String?                 // distance in furlongs (raw from API)
+  distanceRound String?              // distance_round from API
+  prize      String?                 // prize money string
+  raceClass  String?                 // class from API (e.g. "2", "Group 1")
+  raceType   String?                 // "Flat" | "Chase" | "Hurdle" | "NH Flat"
+  ageBand    String?                 // age_band from API e.g. "3yo+"
+  sexRestriction String?             // sex_restriction from API
+  fieldSize  Int?                    // number of runners
+  pattern    String?                 // pattern race name
+  ratingBand String?                 // rating_band from API
   status     RaceStatus @default(UPCOMING)
 
-  // Tahmin / Predictions
-  tahmin1X String?
-  riskRate Int?
+  // API detail fields
+  courseId          String?           // course_id from API
+  offDt             String?           // off_dt — ISO datetime of race off
+  goingDetailed     String?           // going_detailed
+  railMovements     String?
+  stalls            String?
+  weather           String?
+  jumps             String?           // jump type for NH races
+  bigRace           Boolean?          // big_race flag
+  isAbandoned       Boolean?
+  tip               String?  @db.Text // tip from racecards
+  verdict           String?  @db.Text
+  winningTimeDetail String?
+  comments          String?  @db.Text
+  nonRunners        String?  @db.Text
+
+  // Prediction summary (written by CalculationService)
+  tahmin1X          String?           // "1" | "1X" | "12"
+  riskRate          Int?              // 45 | 65 | 85
   predictionMessage String?
-  hasPredictions    Boolean @default(false)
+  hasPredictions    Boolean  @default(false)
+  predictedAt       DateTime?
+
+  // Odds sync tracking
+  oddsSyncedAt      DateTime?
+
+  meeting     Meeting?    @relation(fields: [meetingId], references: [id])
+  entries     RaceEntry[]
+  results     RaceResult[]
+  odds        Odds[]
+  oddsHistory OddsHistory[]
+  favorites   Favorite[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  entries RaceEntry[]
-  results RaceResult[]
-
+  @@index([date])
+  @@index([status])
+  @@index([region, date])
+  @@index([location, date])
   @@map("races")
 }
 
+// ─── RACE ENTRY ───────────────────────────────────────────────────────────────
+// Source: racecard.runners[] from /v1/racecards/pro (one row per runner per race)
+// Algorithm inputs: weight (weightEffect), draw, form, rpr, or, ts
+//
 model RaceEntry {
-  id         String  @id @default(cuid())
-  raceId     String
-  horseId    String
-  jockeyId   String?
-  jockeyName String?
+  id          String   @id @default(cuid())
+  raceId      String
+  horseId     String
+  jockeyId    String?
+  trainerId   String?
+  ownerId     String?
+  jockeyName  String?
   trainerName String?
-  weight     Float?
-  draw       Int?
+  ownerName   String?
 
-  // Individual Scores
-  horsePower    Float?
-  jockeyPower   Float?
+  // From API runner data
+  weight      Float?                  // weight in lbs (converted from stones-lbs)
+  weightStr   String?                 // raw weight string e.g. "9-2"
+  draw        Int?                    // stall / barrier draw
+  number      String?                 // cloth number
+  sexCode     String?
+  colour      String?
+  age         Int?
 
-  // Final Results
-  normalizedScore Float?
-  rank            Int?
-  category        Category?
+  // Runner narrative fields from API
+  comment        String? @db.Text    // runner.comment — analyst comment
+  spotlight      String? @db.Text    // runner.spotlight — spotlight text
+  headgear       String?             // headgear code
+  headgearRun    String?             // headgear_run
+  windSurgery    String?             // wind_surgery
+  windSurgeryRun String?             // wind_surgery_run
 
-  // AI Prediction Details — Core Markets
-  winProb                  Float?
-  winOddsFair              Float?
-  placeProb                Float?
-  eachWayProb              Float?   // Each Way market probability
-  goingSuitabilityScore    Float?
-  distanceSuitabilityScore Float?
-  courseSpecialistScore    Float?   // Course Specialist score
-  drawBiasScore            Float?   // Draw Bias score
-  jockeyFormScore          Float?
-  trainerFormScore         Float?
-  aiSelectionRank          Int?
-  aiConfidence             String?
-  aiConfidenceScore        Float?
-  aiAnalysis               String?  @db.Text
+  // Official ratings from API runner data
+  ofr               String?           // official flat rating
+  rpr               String?           // Racing Post Rating
+  ts                String?           // Topspeed rating
+  or                String?           // Official Rating (general)
+  speedRating       String?
+  performanceRating String?
 
-  // AI Value Edge — flags underpriced horses vs bookmaker odds
-  hasValueEdge    Boolean?  // true if AI fair odds > bookmaker price
-  valueEdgePercent Float?   // e.g. 12.5 means 12.5% edge
+  // Performance indicators
+  silkUrl    String?                  // runner.silk_url
+  lastRun    String?                  // days since last run (runner.last_run)
+  form       String?                  // recent form string e.g. "123X45"
+  trainerRtf String?                  // trainer_rtf — trainer recent form
+  trainerLocation String?
 
-  race   Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  horse  Horse   @relation(fields: [horseId], references: [id], onDelete: Cascade)
-  jockey Jockey? @relation(fields: [jockeyId], references: [id])
+  // ── Algorithm score components (from ARGOLİTMA.xlsx) ──────────────────────
+  // Weight: 45, 35, 8, 6, 2, 5, 5, 10
+  horsePower    Float?                // = (wins×4 + 2nds×3 + 3rds×2 + 4ths×1) / totalRaces
+  jockeyPower   Float?                // = (wins×4 + 2nds×3 + 3rds×2 + 4ths×1) / totalRides
+  sirePower     Float?                // = Sire.power (offspring stats)
+  damPower      Float?                // = Dam.power  (progeny stats)
+  damSirePower  Float?                // = DamSire.power
+  pedigreePower Float?                // = avg(sirePower, damPower, damSirePower)
+  earningScore  Float?                // = (horseAvgEarning / fieldAvgEarning) − 1
+  weightScore   Float?                // = (avgFieldWeight − horseWeight) / avgFieldWeight
+
+  // ── Final scores ──────────────────────────────────────────────────────────
+  rawScore        Float?              // = Σ(component × weight)
+  normalizedScore Float?              // = rawScore (display alias)
+  rank            Int?                // 1 = best in field
+  category        Category?           // SMALL | MEDIUM | BIG | X
+
+  // ── Market / AI probability fields ───────────────────────────────────────
+  winProb       Float?
+  placeProb     Float?
+  eachWayProb   Float?
+  winOddsFair   Float?                // 1 / winProb
+  aiSelectionRank   Int?
+  aiConfidence      String?           // "HIGH" | "MEDIUM" | "LOW"
+  aiConfidenceScore Float?
+  aiAnalysis        String? @db.Text
+  hasValueEdge      Boolean?
+  valueEdgePercent  Float?
+
+  race    Race     @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  horse   Horse    @relation(fields: [horseId], references: [id], onDelete: Cascade)
+  jockey  Jockey?  @relation(fields: [jockeyId], references: [id])
+  trainer Trainer? @relation(fields: [trainerId], references: [id])
+  owner   Owner?   @relation(fields: [ownerId], references: [id])
 
   @@unique([raceId, horseId])
+  @@index([raceId, rank])
   @@map("race_entries")
 }
 
+// ─── RACE RESULT ─────────────────────────────────────────────────────────────
+// Source: /v1/results — runner position, time, earnings, beaten distances
+//
 model RaceResult {
   id       String  @id @default(cuid())
   raceId   String
   horseId  String
   jockeyId String?
   position Int
-  time     String?
-  earnings Float?
+  time     String?                   // winning_time or runner time
+  earnings Float?                    // estimated prize earnings
+
+  // Result detail fields from API
+  btn    String?                     // beaten distances
+  ovrBtn String?                     // overall beaten distance from winner
+  or     String?                     // official rating at time of race
+  rpr    String?                     // Racing Post Rating post-race
+  tsr    String?                     // TopSpeed Rating post-race
 
   race   Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
   horse  Horse   @relation(fields: [horseId], references: [id], onDelete: Cascade)
   jockey Jockey? @relation(fields: [jockeyId], references: [id])
 
   @@unique([raceId, horseId])
+  @@index([horseId])
+  @@index([raceId, position])
   @@map("race_results")
+}
+
+// ─── ODDS ─────────────────────────────────────────────────────────────────────
+// Source: /v1/odds/{race_id}/{horse_id}
+// Fields: race_id, horse_id, horse (name), odds (object with bookmaker keys)
+//
+model Odds {
+  id        String   @id @default(cuid())
+  raceId    String
+  horseId   String?                  // Racing API horse_id (externalId)
+  horseName String?
+  bookmaker String?                  // e.g. "BetFair" | "William Hill" etc.
+  winOdds   Float?                   // decimal win odds
+  placeOdds Float?                   // decimal place odds
+  sp        Float?                   // Starting Price (decimal)
+  source    String?                  // "theracingapi" | "manual"
+  fetchedAt DateTime @default(now())
+
+  race Race @relation(fields: [raceId], references: [id], onDelete: Cascade)
+
+  @@index([raceId])
+  @@index([raceId, horseName])
+  @@map("odds")
+}
+
+// Snapshot of odds at a point in time (for odds movement tracking)
+model OddsHistory {
+  id        String   @id @default(cuid())
+  raceId    String
+  horseId   String?
+  horseName String?
+  bookmaker String?
+  winOdds   Float?
+  placeOdds Float?
+  fetchedAt DateTime @default(now())
+
+  race Race @relation(fields: [raceId], references: [id], onDelete: Cascade)
+
+  @@index([raceId, fetchedAt])
+  @@map("odds_history")
+}
+
+// ─── FAVORITES ────────────────────────────────────────────────────────────────
+
+model Favorite {
+  id      String  @id @default(cuid())
+  userId  String
+  horseId String?
+  raceId  String?
+
+  horse Horse? @relation(fields: [horseId], references: [id], onDelete: Cascade)
+  race  Race?  @relation(fields: [raceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, horseId])
+  @@unique([userId, raceId])
+  @@map("favorites")
 }

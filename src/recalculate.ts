@@ -1,5 +1,5 @@
 import { prisma } from "./helpers/prisma.js";
-import { CalculationService } from "./app/modules/analysis/calculation.service.js";
+import { PredictionRankingService } from "./algorithm/prediction-ranking.service.js";
 
 async function main() {
   const races = await prisma.race.findMany();
@@ -7,7 +7,7 @@ async function main() {
   for (const race of races) {
     try {
       console.log(`Calculating for race ${race.id} (${race.location})...`);
-      await CalculationService.calculateRaceScores(race.id);
+      await PredictionRankingService.calculateForRace(race.id, "manual");
     } catch (e: any) {
       console.error(`Failed for race ${race.id}:`, e.message);
     }

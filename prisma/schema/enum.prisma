@@ -1,12 +1,14 @@
 enum Role {
   USER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum RaceStatus {
   UPCOMING
   LIVE
   FINISHED
+  ABANDONED
 }
 
 enum Category {
@@ -20,13 +22,33 @@ enum NotificationType {
   SYSTEM
   PREDICTION_READY
   RACE_STARTING
+  RACE_FINISHING_SOON
   RACE_FINISHED
   SUBSCRIPTION_EXPIRING
+  SUBSCRIPTION_EXPIRED
+  ODDS_CHANGE
 }
 
 enum SubscriptionDuration {
   WEEKLY
   MONTHLY
   YEARLY
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum JobStatus {
+  WAITING
+  ACTIVE
+  COMPLETED
+  FAILED
+  DELAYED
+  STALLED
 }
 

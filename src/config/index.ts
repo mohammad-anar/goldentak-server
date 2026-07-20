@@ -41,4 +41,8 @@ export default {
     privateKey: process.env.APPLE_PRIVATE_KEY,
     bundleId: process.env.APPLE_BUNDLE_ID,
   },
+  racing: {
+    apiKey: process.env.RACING_API_KEY,
+    apiSecret: process.env.RACING_API_SECRET,
+  },
 };

@@ -1,13 +1,10 @@
-import { RateLimiterRedis, RateLimiterMemory } from "rate-limiter-flexible";
+import { RateLimiterMemory } from "rate-limiter-flexible";
 import { Request, Response, NextFunction } from "express";
-import redisClient from "../../helpers/redis.js";
 
 /**
  * Sliding window rate limiter — 100 requests per IP per 60-second rolling window.
  *
- * Backed by Redis for distributed accuracy.
- * Falls back to in-process memory (insuranceLimiter) if Redis is unavailable,
- * ensuring the API stays up even during Redis outages.
+ * Backed by in-process memory.
  *
  * Headers set on every response:
  *   X-RateLimit-Limit     — max requests per window
@@ -16,21 +13,10 @@ import redisClient from "../../helpers/redis.js";
  *   Retry-After           — seconds to wait (only on 429)
  */
 
-// Memory fallback used when Redis is down
-const memoryFallback = new RateLimiterMemory({
-  keyPrefix: "rl:ip:mem",
-  points:    100,
-  duration:  60,
-});
-
-// Primary limiter backed by Redis
-const limiter = new RateLimiterRedis({
-  storeClient:      redisClient,
-  keyPrefix:        "rl:ip",
-  points:           100,   // 100 requests
-  duration:         60,    // per 60-second sliding window
-  blockDuration:    0,     // no hard block; just return 429
-  insuranceLimiter: memoryFallback,
+const limiter = new RateLimiterMemory({
+  keyPrefix: "rl:ip",
+  points:    100,   // 100 requests
+  duration:  60,    // per 60-second sliding window
 });
 
 const rateLimiter = async (

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
 import { RaceService } from "./race.service.js";
-import { CalculationService } from "../analysis/calculation.service.js";
+import { PredictionRankingService } from "../../../algorithm/prediction-ranking.service.js";
 import { pushRaceUpdate, registerSseClient } from "../../../helpers/sseHelper.js";
 import redisClient from "../../../helpers/redis.js";
 
@@ -78,7 +78,7 @@ function isPremiumUser(req: Request): boolean {
 
 const getAllRaces = async (req: Request, res: Response) => {
   try {
-    const result = await RaceService.getAllRaces(req.query);
+    const result = await RaceService.getAllRaces(req.query) as any;
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Races fetched successfully",
@@ -96,7 +96,7 @@ const getAllRaces = async (req: Request, res: Response) => {
 
 const getRaceById = async (req: Request, res: Response) => {
   try {
-    const raw = await RaceService.getRaceById(req.params.id);
+    const raw = await RaceService.getRaceById(req.params.id as string);
     const premium = isPremiumUser(req);
     const data = premium ? raw : maskRaceForFreeUser(raw);
 
@@ -116,7 +116,8 @@ const getRaceById = async (req: Request, res: Response) => {
 
 const calculateRaceScores = async (req: Request, res: Response) => {
   try {
-    const result = await CalculationService.calculateRaceScores(req.params.id);
+    // Run the actual core ranking service
+    const result = await PredictionRankingService.calculateForRace(req.params.id as string, "manual");
 
     // Invalidate Redis cache so next REST fetch returns fresh scored data
     try {
@@ -127,7 +128,7 @@ const calculateRaceScores = async (req: Request, res: Response) => {
     }
 
     // Push the updated entries to all SSE clients watching this race
-    pushRaceUpdate(req.params.id, { entries: result });
+    pushRaceUpdate(req.params.id as string, { entries: result });
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -142,40 +143,22 @@ const calculateRaceScores = async (req: Request, res: Response) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SSE STREAM ENDPOINT
-// GET /races/:id/stream
-//
-// Keeps the HTTP connection open and pushes Server-Sent Events whenever the
-// race data changes (scores recalculated, status flipped, etc.).
-//
-// Authentication: same auth() middleware as other race routes.
-// Premium masking: free-user SSE events have prediction fields nulled.
-//
-// SSE Events emitted to clients:
-//   event: connected   — sent immediately on connection
-//   event: race:update — sent on every pushRaceUpdate() call
-//   : heartbeat        — comment line every 25 s (keep-alive)
-// ─────────────────────────────────────────────────────────────────────────────
 const streamRace = async (req: Request, res: Response) => {
   const { id } = req.params;
   const premium = isPremiumUser(req);
 
   // Register this response as an SSE client.
   // The returned `cleanup` function removes the client from the registry.
-  const cleanup = registerSseClient(id, res);
+  const cleanup = registerSseClient(id as string, res);
 
-  // Remove the client when the connection drops (client navigates away, app
-  // goes to background, network drops, etc.)
+  // Remove the client when the connection drops
   req.on("close", cleanup);
 
-  // If the race has existing scored data, push it immediately so the client
-  // gets an initial state without waiting for the next calculation trigger.
+  // If the race has existing scored data, push it immediately
   try {
-    const raw = await RaceService.getRaceById(id);
+    const raw = await RaceService.getRaceById(id as string) as any;
     if (raw && raw.hasPredictions) {
       const data = premium ? raw : maskRaceForFreeUser(raw);
-      // Write directly to *this* client's response (initial snapshot)
       res.write(
         `event: race:snapshot\ndata: ${JSON.stringify({ raceId: id, isPremium: premium, ...data })}\n\n`
       );
@@ -211,7 +194,7 @@ const getRaceStatistics = async (req: Request, res: Response) => {
         isPremium: false,
       });
     }
-    const result = await RaceService.getRaceStatistics(req.params.id);
+    const result = await RaceService.getRaceStatistics(req.params.id as string);
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Race statistics fetched successfully",

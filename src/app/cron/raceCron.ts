@@ -1,100 +1,75 @@
-import { prisma } from "../../helpers/prisma.js";
 import cron from "node-cron";
-import { SyncService } from "../modules/analysis/sync.service.js";
-import { CalculationService } from "../modules/analysis/calculation.service.js";
-import { RaceStatus } from "@prisma/client";
+import { Queues, JOB_NAMES } from "../../queues/queue.registry.js";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Race Cron Bootstrap
+//
+// Schedules BullMQ jobs at the correct intervals.
+// NEVER calls sync services or calculation services directly.
+// All work is done by BullMQ workers in the background.
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const runRaceSync = async () => {
-  console.log(`[${new Date().toISOString()}] Starting automatic race synchronization...`);
-  
-  // 1. Sync upcoming races
+async function dispatchUpcomingSync(): Promise<void> {
   try {
-    const result = await SyncService.syncUpcomingRaces();
-    console.log(`[${new Date().toISOString()}] Automatic race synchronization completed successfully. Synced ${result.count} upcoming races.`);
-  } catch (error: any) {
-    console.error(`[${new Date().toISOString()}] Error running upcoming race synchronization:`, error.message);
+    await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 3 }, { priority: 2 });
+    console.log(`[RaceCron] Enqueued ${JOB_NAMES.SYNC_UPCOMING_RACES}`);
+  } catch (err: any) {
+    console.error("[RaceCron] Failed to enqueue upcoming sync:", err.message);
   }
+}
 
-  // 2. Sync recent race results
+async function dispatchResultSync(): Promise<void> {
   try {
-    const pastResult = await SyncService.syncPastResults();
-    console.log(`[${new Date().toISOString()}] Synced ${pastResult.count} recent race results.`);
-  } catch (pastError: any) {
-    console.error(`[${new Date().toISOString()}] Error syncing recent race results:`, pastError.message);
+    await Queues.result.add(JOB_NAMES.SYNC_PAST_RESULTS, { days: 3 }, { priority: 2 });
+    console.log(`[RaceCron] Enqueued ${JOB_NAMES.SYNC_PAST_RESULTS}`);
+  } catch (err: any) {
+    console.error("[RaceCron] Failed to enqueue result sync:", err.message);
   }
+}
 
-  // 3. Warm up bulk predictions cache
+async function dispatchPredictionBatch(): Promise<void> {
   try {
-    await SyncService.syncBulkPredictions();
-  } catch (predError: any) {
-    console.error(`[${new Date().toISOString()}] Error caching bulk predictions:`, predError.message);
+    await Queues.prediction.add(JOB_NAMES.CALCULATE_PREDICTIONS, {}, { priority: 1 });
+    console.log(`[RaceCron] Enqueued ${JOB_NAMES.CALCULATE_PREDICTIONS}`);
+  } catch (err: any) {
+    console.error("[RaceCron] Failed to enqueue prediction batch:", err.message);
   }
-};
+}
 
-export const runPendingPredictionsUpdate = async () => {
-  console.log(`[${new Date().toISOString()}] Checking for races to calculate/populate...`);
-  
-  try {
-    // Find:
-    // 1. Races that have predictions (hasPredictions = true) but do not have calculations completed yet
-    // 2. Upcoming/Live races that have 0 entries (so we fetch details/runners regardless of predictions)
-    const racesToCalculate = await prisma.race.findMany({
-      where: {
-        OR: [
-          {
-            hasPredictions: true,
-            OR: [
-              { entries: { none: {} } },
-              { entries: { some: { normalizedScore: null } } }
-            ]
-          },
-          {
-            status: { in: [RaceStatus.UPCOMING, RaceStatus.LIVE] },
-            entries: { none: {} }
-          }
-        ]
-      }
-    });
-
-    console.log(`[${new Date().toISOString()}] Found ${racesToCalculate.length} races requiring calculation/runner sync.`);
-
-    for (const race of racesToCalculate) {
-      try {
-        console.log(`[${new Date().toISOString()}] Auto-calculating/populating race: ${race.location} (${race.externalId})`);
-        await CalculationService.calculateRaceScores(race.id);
-        console.log(`[${new Date().toISOString()}] Populated successfully for race: ${race.location}`);
-      } catch (error: any) {
-        console.error(`[${new Date().toISOString()}] Failed calculation for race ${race.id} (${race.location}):`, error.message);
-      }
-    }
-  } catch (error: any) {
-    console.error(`[${new Date().toISOString()}] Error running pending predictions check:`, error.message);
-  }
-};
-
-export const initRaceCron = () => {
-  // Run every 30 minutes
-  cron.schedule("*/30 * * * *", async () => {
-    console.log(`[${new Date().toISOString()}] Scheduled Race Cron triggered...`);
-    await runRaceSync();
-    await runPendingPredictionsUpdate();
+export function initRaceCron(): void {
+  // ── Every 10 minutes: sync today's racecards (high priority) ─────────────
+  cron.schedule("*/10 * * * *", async () => {
+    console.log(`[RaceCron] [${new Date().toISOString()}] 10-min tick — syncing today's racecards`);
+    await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 1 }, { priority: 1 });
   });
-  
-  console.log("[Race Cron] Cron Scheduler Initialized successfully. Scheduled sync & prediction update check for every 30 minutes.");
-  
-  // Also run an immediate check on startup
-  const checkAndSyncOnStartup = async () => {
-    try {
-      console.log(`[${new Date().toISOString()}] Triggering startup race synchronization...`);
-      await runRaceSync();
-      
-      console.log(`[${new Date().toISOString()}] Triggering startup predictions update check...`);
-      await runPendingPredictionsUpdate();
-    } catch (error: any) {
-      console.error("[Race Cron] Failed to check and sync races on startup:", error.message);
-    }
-  };
 
-  checkAndSyncOnStartup();
-};
+  // ── Every 2 minutes: sync race results ───────────────────────────────────
+  cron.schedule("*/2 * * * *", async () => {
+    console.log(`[RaceCron] [${new Date().toISOString()}] 2-min tick — syncing results`);
+    await dispatchResultSync();
+    await dispatchPredictionBatch();
+  });
+
+  // ── Every hour: sync upcoming races (next 3 days) ─────────────────────────
+  cron.schedule("0 * * * *", async () => {
+    console.log(`[RaceCron] [${new Date().toISOString()}] Hourly tick — syncing upcoming races`);
+    await dispatchUpcomingSync();
+  });
+
+  // ── Daily at 00:05 UTC: full sync ─────────────────────────────────────────
+  cron.schedule("5 0 * * *", async () => {
+    console.log(`[RaceCron] [${new Date().toISOString()}] Daily tick — full sync`);
+    await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 7 }, { priority: 3 });
+    await Queues.result.add(JOB_NAMES.SYNC_PAST_RESULTS, { days: 7 }, { priority: 3 });
+  });
+
+  console.log("[RaceCron] Cron scheduler initialised (10min/2min/hourly/daily schedules).");
+
+  // ── Startup: kick off an immediate sync ──────────────────────────────────
+  setTimeout(async () => {
+    console.log("[RaceCron] Startup — dispatching initial sync jobs...");
+    await dispatchUpcomingSync();
+    await dispatchResultSync();
+    await dispatchPredictionBatch();
+  }, 5_000); // 5-second delay to let the server finish starting
+}

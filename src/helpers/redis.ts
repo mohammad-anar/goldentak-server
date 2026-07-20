@@ -1,134 +1,200 @@
 import { createClient } from "redis";
+import IORedis from "ioredis";
 import dotenv from "dotenv";
 import path from "path";
 
 dotenv.config({ path: path.join(process.cwd(), ".env") });
 
-let isRedisConnected = false;
+// ── IORedis client (used by BullMQ) ───────────────────────────────────────────
+export const bullRedisConnection = new (IORedis as any)(
+  process.env.REDIS_URL || "redis://localhost:6379",
+  {
+    maxRetriesPerRequest: null, // Required by BullMQ
+    enableReadyCheck: false,
+    lazyConnect: true,
+    password: process.env.REDIS_PASSWORD || undefined,
+  }
+);
+
+bullRedisConnection.on("connect", () => console.log("[BullMQ Redis] Connected"));
+bullRedisConnection.on("error", (err: Error) =>
+  console.error("[BullMQ Redis] Error:", err.message)
+);
+
+// ── In-memory fallback (used when Redis is unavailable) ──────────────────────
 const memoryStore = new Map<string, { value: string; expiry: number }>();
 
-const rawClient = createClient({
-  // Use the environment variable, fallback to 'redis' (the service name)
-  url: process.env.REDIS_URL || "redis://redis:6379",
-});
+const memoryFallback = {
+  async setEx(key: string, seconds: number, value: string) {
+    memoryStore.set(key, { value, expiry: Date.now() + seconds * 1000 });
+    return "OK";
+  },
+  async get(key: string) {
+    const item = memoryStore.get(key);
+    if (!item) return null;
+    if (Date.now() > item.expiry) {
+      memoryStore.delete(key);
+      return null;
+    }
+    return item.value;
+  },
+  async del(...keys: string[]) {
+    let count = 0;
+    for (const k of keys) {
+      if (memoryStore.delete(k)) count++;
+    }
+    return count;
+  },
+  async keys(pattern: string) {
+    const prefix = pattern.replace(/\*/g, "");
+    return [...memoryStore.keys()].filter((k) => k.startsWith(prefix));
+  },
+  async flushAll() {
+    memoryStore.clear();
+    return "OK";
+  },
+  async ping() {
+    return "PONG";
+  },
+};
 
-let loggedError = false;
-rawClient.on("error", (err) => {
-  isRedisConnected = false;
-  if (!loggedError) {
-    console.warn("[Redis] Client error (will use in-memory fallback):", err.message);
-    loggedError = true;
+// ── Redis wrapper (gracefully falls back to in-memory) ───────────────────────
+class RedisClient {
+  private _client: any = null;
+  private _usingMemory = false;
+  private _connecting = false;
+
+  private async connect() {
+    if (this._connecting) return;
+    this._connecting = true;
+
+    const url = process.env.REDIS_URL || "redis://localhost:6379";
+
+    try {
+      const client = createClient({
+        url,
+        password: process.env.REDIS_PASSWORD || undefined,
+      });
+
+      client.on("error", (err) => {
+        console.error("[Redis] Error:", err.message);
+      });
+
+      await client.connect();
+      this._client = client;
+      this._usingMemory = false;
+      console.log("[Redis] Connected to Redis server");
+    } catch (err: any) {
+      console.warn(
+        `[Redis] Could not connect (${err.message}). Using in-memory fallback.`
+      );
+      this._usingMemory = true;
+    } finally {
+      this._connecting = false;
+    }
   }
-});
 
-rawClient.on("connect", () => {
-  isRedisConnected = true;
-  loggedError = false;
-  console.log("[Redis] Connected successfully.");
-});
-
-// Start connection in the background so it doesn't block startup
-rawClient.connect().catch(() => {
-  // Silently handle startup connection failures since rawClient.on("error") captures it
-});
-
-const redisClientWrapper: any = new Proxy(rawClient, {
-  get(target, prop, receiver) {
-    // Override setEx
-    if (prop === "setEx" || prop === "setex") {
-      return async (key: string, seconds: number, value: string) => {
-        if (isRedisConnected) {
-          try {
-            return await rawClient.setEx(key, seconds, value);
-          } catch (err) {
-            // fall through
-          }
-        }
-        const expiry = Date.now() + seconds * 1000;
-        memoryStore.set(key, { value, expiry });
-        return "OK";
-      };
-    }
-
-    // Override get
-    if (prop === "get") {
-      return async (key: string) => {
-        if (isRedisConnected) {
-          try {
-            return await rawClient.get(key);
-          } catch (err) {
-            // fall through
-          }
-        }
-        const item = memoryStore.get(key);
-        if (!item) return null;
-        if (Date.now() > item.expiry) {
-          memoryStore.delete(key);
-          return null;
-        }
-        return item.value;
-      };
-    }
-
-    // Override del
-    if (prop === "del") {
-      return async (key: string) => {
-        if (isRedisConnected) {
-          try {
-            return await rawClient.del(key);
-          } catch (err) {
-            // fall through
-          }
-        }
-        const existed = memoryStore.has(key);
-        memoryStore.delete(key);
-        return existed ? 1 : 0;
-      };
-    }
-
-    // Override flushAll / flushall
-    if (prop === "flushAll" || prop === "flushall") {
-      return async () => {
-        memoryStore.clear();
-        if (isRedisConnected) {
-          try {
-            return await rawClient.flushAll();
-          } catch (err) {
-            // fall through
-          }
-        }
-        return "OK";
-      };
-    }
-
-    // Default: forward to raw client
-    return Reflect.get(target, prop, receiver);
+  private get backend(): any {
+    if (this._usingMemory || !this._client) return memoryFallback;
+    return this._client;
   }
-});
+
+  async init() {
+    await this.connect();
+  }
+
+  async setEx(key: string, seconds: number, value: string): Promise<string> {
+    try {
+      if (!this._usingMemory && this._client) {
+        await this._client.setEx(key, seconds, value);
+        return "OK";
+      }
+    } catch (err: any) {
+      console.warn("[Redis] setEx failed, using memory:", err.message);
+      this._usingMemory = true;
+    }
+    return memoryFallback.setEx(key, seconds, value);
+  }
+
+  async get(key: string): Promise<string | null> {
+    try {
+      if (!this._usingMemory && this._client) {
+        return await this._client.get(key);
+      }
+    } catch (err: any) {
+      console.warn("[Redis] get failed, using memory:", err.message);
+      this._usingMemory = true;
+    }
+    return memoryFallback.get(key);
+  }
+
+  async del(...keys: string[]): Promise<number> {
+    try {
+      if (!this._usingMemory && this._client) {
+        return await this._client.del(keys);
+      }
+    } catch (err: any) {
+      console.warn("[Redis] del failed, using memory:", err.message);
+      this._usingMemory = true;
+    }
+    return memoryFallback.del(...keys);
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    try {
+      if (!this._usingMemory && this._client) {
+        return await this._client.keys(pattern);
+      }
+    } catch (err: any) {
+      console.warn("[Redis] keys failed, using memory:", err.message);
+      this._usingMemory = true;
+    }
+    return memoryFallback.keys(pattern);
+  }
+
+  async flushAll(): Promise<string> {
+    try {
+      if (!this._usingMemory && this._client) {
+        return await this._client.flushAll();
+      }
+    } catch (err: any) {
+      console.warn("[Redis] flushAll failed, using memory:", err.message);
+      this._usingMemory = true;
+    }
+    return memoryFallback.flushAll();
+  }
+
+  async ping(): Promise<string> {
+    try {
+      if (!this._usingMemory && this._client) {
+        return await this._client.ping();
+      }
+    } catch {
+      this._usingMemory = true;
+    }
+    return "PONG";
+  }
+
+  isUsingMemory() {
+    return this._usingMemory;
+  }
+}
+
+const redisClient = new RedisClient();
+
+// Initialise connection (non-blocking — falls back if Redis not available)
+redisClient.init().catch(() => {});
 
 export const clearRaceCache = async (raceId?: string) => {
-  // 1. Clear in-memory fallback
-  for (const key of memoryStore.keys()) {
-    if (key.startsWith("races:") || (raceId && key.includes(raceId))) {
-      memoryStore.delete(key);
-    }
-  }
-
-  // 2. Clear Redis
-  if (isRedisConnected) {
-    try {
-      let keys = await rawClient.keys("races:*");
-      if (raceId) {
-        keys = keys.filter(k => k.startsWith("races:list:") || k.includes(raceId));
-      }
-      if (keys.length > 0) {
-        await rawClient.del(keys);
-      }
-      console.log(`[Redis] Cleared ${keys.length} race cache keys.`);
-    } catch (err: any) {
-      console.warn("[Redis] Failed to clear race cache:", err.message);
-    }
+  const keys = await redisClient.keys("races:*");
+  const predKeys = await redisClient.keys("predictions:*");
+  const toDelete = [...keys, ...predKeys].filter((k) =>
+    raceId ? k.includes(raceId) || k.includes("today") || k.includes("list") : true
+  );
+  if (toDelete.length > 0) {
+    await redisClient.del(...toDelete);
+    console.log(`[Cache] Cleared ${toDelete.length} race cache key(s).`);
   }
 };
 
-export default redisClientWrapper;
+export default redisClient;
