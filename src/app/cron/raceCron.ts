@@ -39,28 +39,44 @@ async function dispatchPredictionBatch(): Promise<void> {
 export function initRaceCron(): void {
   // ── Every 10 minutes: sync today's racecards (high priority) ─────────────
   cron.schedule("*/10 * * * *", async () => {
-    console.log(`[RaceCron] [${new Date().toISOString()}] 10-min tick — syncing today's racecards`);
-    await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 1 }, { priority: 1 });
+    try {
+      console.log(`[RaceCron] [${new Date().toISOString()}] 10-min tick — syncing today's racecards`);
+      await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 1 }, { priority: 1 });
+    } catch (err: any) {
+      console.warn("[RaceCron] 10-min sync queue notice:", err.message);
+    }
   });
 
   // ── Every 2 minutes: sync race results ───────────────────────────────────
   cron.schedule("*/2 * * * *", async () => {
-    console.log(`[RaceCron] [${new Date().toISOString()}] 2-min tick — syncing results`);
-    await dispatchResultSync();
-    await dispatchPredictionBatch();
+    try {
+      console.log(`[RaceCron] [${new Date().toISOString()}] 2-min tick — syncing results`);
+      await dispatchResultSync();
+      await dispatchPredictionBatch();
+    } catch (err: any) {
+      console.warn("[RaceCron] 2-min sync queue notice:", err.message);
+    }
   });
 
   // ── Every hour: sync upcoming races (next 3 days) ─────────────────────────
   cron.schedule("0 * * * *", async () => {
-    console.log(`[RaceCron] [${new Date().toISOString()}] Hourly tick — syncing upcoming races`);
-    await dispatchUpcomingSync();
+    try {
+      console.log(`[RaceCron] [${new Date().toISOString()}] Hourly tick — syncing upcoming races`);
+      await dispatchUpcomingSync();
+    } catch (err: any) {
+      console.warn("[RaceCron] Hourly sync queue notice:", err.message);
+    }
   });
 
   // ── Daily at 00:05 UTC: full sync ─────────────────────────────────────────
   cron.schedule("5 0 * * *", async () => {
-    console.log(`[RaceCron] [${new Date().toISOString()}] Daily tick — full sync`);
-    await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 7 }, { priority: 3 });
-    await Queues.result.add(JOB_NAMES.SYNC_PAST_RESULTS, { days: 7 }, { priority: 3 });
+    try {
+      console.log(`[RaceCron] [${new Date().toISOString()}] Daily tick — full sync`);
+      await Queues.race.add(JOB_NAMES.SYNC_UPCOMING_RACES, { days: 7 }, { priority: 3 });
+      await Queues.result.add(JOB_NAMES.SYNC_PAST_RESULTS, { days: 7 }, { priority: 3 });
+    } catch (err: any) {
+      console.warn("[RaceCron] Daily sync queue notice:", err.message);
+    }
   });
 
   console.log("[RaceCron] Cron scheduler initialised (10min/2min/hourly/daily schedules).");

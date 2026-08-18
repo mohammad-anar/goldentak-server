@@ -10,7 +10,25 @@ import { AlgorithmSettingsService } from "./algorithm/algorithm-settings.service
 
 let server: any;
 
+function isRecoverableError(error: any): boolean {
+  const msg = error?.message || String(error || "");
+  return (
+    msg.includes("max requests limit exceeded") ||
+    msg.includes("Upstash") ||
+    msg.includes("BullMQ") ||
+    msg.includes("Redis") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ENOTFOUND")
+  );
+}
+
 process.on("uncaughtException", (error) => {
+  if (isRecoverableError(error)) {
+    console.warn("[Server] Recoverable exception captured (Redis / Network):", error?.message || error);
+    return;
+  }
   console.error("Uncaught Exception detected. Shutting down...");
   console.error(error);
   process.exit(1);
@@ -21,7 +39,7 @@ async function bootstrap() {
     await seedSuperAdmin();
     await AlgorithmSettingsService.seedDefaults(); // Seed algorithm weights if not present
 
-    // Start BullMQ workers (before crons so workers are ready for first dispatch)
+    // Start BullMQ workers (wrapped safely)
     startWorkers();
 
     initSubscriptionCron();
@@ -40,6 +58,10 @@ async function bootstrap() {
 }
 
 process.on("unhandledRejection", (error) => {
+  if (isRecoverableError(error)) {
+    console.warn("[Server] Recoverable rejection captured (Redis / Network):", (error as any)?.message || error);
+    return;
+  }
   console.error("Unhandled Rejection detected. Shutting down...");
   console.error(error);
 

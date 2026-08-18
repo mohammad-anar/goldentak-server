@@ -78,7 +78,7 @@ export function createRaceWorker(): Worker {
 // Enrichment Workers (Horse, Jockey, Trainer, Odds)
 // ─────────────────────────────────────────────────────────────────────────────
 export function createHorseWorker(): Worker {
-  return new Worker(
+  const worker = new Worker(
     QUEUE_NAMES.HORSE,
     async (job: Job) => {
       if (job.name === JOB_NAMES.SYNC_HORSES) {
@@ -90,10 +90,12 @@ export function createHorseWorker(): Worker {
     },
     { connection: bullRedisConnection, concurrency: CONCURRENCY }
   );
+  worker.on("error", (err) => console.warn(`[HorseWorker] Notice: ${err.message}`));
+  return worker;
 }
 
 export function createJockeyWorker(): Worker {
-  return new Worker(
+  const worker = new Worker(
     QUEUE_NAMES.JOCKEY,
     async (job: Job) => {
       if (job.name === JOB_NAMES.SYNC_JOCKEYS) {
@@ -105,10 +107,12 @@ export function createJockeyWorker(): Worker {
     },
     { connection: bullRedisConnection, concurrency: CONCURRENCY }
   );
+  worker.on("error", (err) => console.warn(`[JockeyWorker] Notice: ${err.message}`));
+  return worker;
 }
 
 export function createTrainerWorker(): Worker {
-  return new Worker(
+  const worker = new Worker(
     QUEUE_NAMES.TRAINER,
     async (job: Job) => {
       if (job.name === JOB_NAMES.SYNC_TRAINERS) {
@@ -120,10 +124,12 @@ export function createTrainerWorker(): Worker {
     },
     { connection: bullRedisConnection, concurrency: CONCURRENCY }
   );
+  worker.on("error", (err) => console.warn(`[TrainerWorker] Notice: ${err.message}`));
+  return worker;
 }
 
 export function createOddsWorker(): Worker {
-  return new Worker(
+  const worker = new Worker(
     QUEUE_NAMES.ODDS,
     async (job: Job) => {
       if (job.name === JOB_NAMES.SYNC_LIVE_ODDS) {
@@ -135,6 +141,8 @@ export function createOddsWorker(): Worker {
     },
     { connection: bullRedisConnection, concurrency: CONCURRENCY }
   );
+  worker.on("error", (err) => console.warn(`[OddsWorker] Notice: ${err.message}`));
+  return worker;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +193,7 @@ export function createPredictionWorker(): Worker {
 
   worker.on("completed", (job) => console.log(`[PredictionWorker] Job ${job.id} (${job.name}) completed.`));
   worker.on("failed", (job, err) => console.error(`[PredictionWorker] Job ${job?.id} failed: ${err.message}`));
+  worker.on("error", (err) => console.warn(`[PredictionWorker] Notice: ${err.message}`));
 
   return worker;
 }
@@ -200,19 +209,27 @@ export function startWorkers(): void {
     return;
   }
 
-  _workers = [
-    createRaceWorker(),
-    createHorseWorker(),
-    createJockeyWorker(),
-    createTrainerWorker(),
-    createOddsWorker(),
-    createPredictionWorker(),
-  ];
+  try {
+    _workers = [
+      createRaceWorker(),
+      createHorseWorker(),
+      createJockeyWorker(),
+      createTrainerWorker(),
+      createOddsWorker(),
+      createPredictionWorker(),
+    ];
 
-  console.log(`[Workers] ${_workers.length} BullMQ workers started.`);
+    console.log(`[Workers] ${_workers.length} BullMQ workers started.`);
+  } catch (err: any) {
+    console.warn(`[Workers] Failed to start BullMQ workers (${err.message}). API server will continue running.`);
+  }
 }
 
 export async function stopWorkers(): Promise<void> {
-  await Promise.all(_workers.map((w) => w.close()));
-  console.log("[Workers] All workers stopped.");
+  try {
+    await Promise.all(_workers.map((w) => w.close()));
+    console.log("[Workers] All workers stopped.");
+  } catch (err: any) {
+    console.warn("[Workers] Error stopping workers:", err.message);
+  }
 }

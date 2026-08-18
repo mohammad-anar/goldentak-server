@@ -6,20 +6,38 @@ import path from "path";
 dotenv.config({ path: path.join(process.cwd(), ".env") });
 
 // ── IORedis client (used by BullMQ) ───────────────────────────────────────────
-export const bullRedisConnection = new (IORedis as any)(
-  process.env.REDIS_URL || "redis://localhost:6379",
-  {
-    maxRetriesPerRequest: null, // Required by BullMQ
-    enableReadyCheck: false,
-    lazyConnect: true,
-    password: process.env.REDIS_PASSWORD || undefined,
-  }
-);
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+
+export const bullRedisConnection = new (IORedis as any)(redisUrl, {
+  maxRetriesPerRequest: null, // Required by BullMQ
+  enableReadyCheck: false,
+  lazyConnect: true,
+  password: process.env.REDIS_PASSWORD || undefined,
+  retryStrategy(times: number) {
+    if (times > 10) {
+      console.warn("[BullMQ Redis] Exceeded maximum retry attempts. Throttling reconnection...");
+      return 30000; // Retry every 30s instead of tight loop
+    }
+    return Math.min(times * 1000, 10000);
+  },
+  reconnectOnError(err: Error) {
+    const msg = err.message || "";
+    if (msg.includes("max requests limit exceeded") || msg.includes("READONLY")) {
+      console.warn("[BullMQ Redis] Reconnect prevented due to Redis limit / status:", msg);
+      return false;
+    }
+    return true;
+  },
+});
 
 bullRedisConnection.on("connect", () => console.log("[BullMQ Redis] Connected"));
-bullRedisConnection.on("error", (err: Error) =>
-  console.error("[BullMQ Redis] Error:", err.message)
-);
+bullRedisConnection.on("error", (err: Error) => {
+  if (err.message?.includes("max requests limit exceeded")) {
+    console.warn("[BullMQ Redis] Upstash request limit reached. BullMQ operations will be throttled.");
+  } else {
+    console.warn("[BullMQ Redis] Warning:", err.message);
+  }
+});
 
 // ── In-memory fallback (used when Redis is unavailable) ──────────────────────
 const memoryStore = new Map<string, { value: string; expiry: number }>();
@@ -64,6 +82,11 @@ class RedisClient {
   private _usingMemory = false;
   private _connecting = false;
 
+  private isQuotaError(err: any): boolean {
+    const msg = err?.message || "";
+    return msg.includes("max requests limit exceeded") || msg.includes("OOM") || msg.includes("quota");
+  }
+
   private async connect() {
     if (this._connecting) return;
     this._connecting = true;
@@ -74,10 +97,26 @@ class RedisClient {
       const client = createClient({
         url,
         password: process.env.REDIS_PASSWORD || undefined,
+        socket: {
+          reconnectStrategy: (retries) => {
+            if (retries > 5) {
+              this._usingMemory = true;
+              return false; // Stop reconnecting, stay in memory mode
+            }
+            return Math.min(retries * 500, 3000);
+          },
+        },
       });
 
-      client.on("error", (err) => {
-        console.error("[Redis] Error:", err.message);
+      client.on("error", (err: any) => {
+        if (this.isQuotaError(err)) {
+          if (!this._usingMemory) {
+            console.warn("[Redis] Upstash quota limit exceeded. Switching CacheService to In-Memory mode.");
+          }
+          this._usingMemory = true;
+        } else {
+          console.warn("[Redis] Client notice:", err.message);
+        }
       });
 
       await client.connect();
@@ -110,8 +149,10 @@ class RedisClient {
         return "OK";
       }
     } catch (err: any) {
-      console.warn("[Redis] setEx failed, using memory:", err.message);
-      this._usingMemory = true;
+      if (this.isQuotaError(err)) {
+        this._usingMemory = true;
+      }
+      console.warn("[Redis] setEx fallback to memory:", err.message);
     }
     return memoryFallback.setEx(key, seconds, value);
   }
@@ -122,8 +163,10 @@ class RedisClient {
         return await this._client.get(key);
       }
     } catch (err: any) {
-      console.warn("[Redis] get failed, using memory:", err.message);
-      this._usingMemory = true;
+      if (this.isQuotaError(err)) {
+        this._usingMemory = true;
+      }
+      console.warn("[Redis] get fallback to memory:", err.message);
     }
     return memoryFallback.get(key);
   }
@@ -134,8 +177,10 @@ class RedisClient {
         return await this._client.del(keys);
       }
     } catch (err: any) {
-      console.warn("[Redis] del failed, using memory:", err.message);
-      this._usingMemory = true;
+      if (this.isQuotaError(err)) {
+        this._usingMemory = true;
+      }
+      console.warn("[Redis] del fallback to memory:", err.message);
     }
     return memoryFallback.del(...keys);
   }
@@ -146,8 +191,10 @@ class RedisClient {
         return await this._client.keys(pattern);
       }
     } catch (err: any) {
-      console.warn("[Redis] keys failed, using memory:", err.message);
-      this._usingMemory = true;
+      if (this.isQuotaError(err)) {
+        this._usingMemory = true;
+      }
+      console.warn("[Redis] keys fallback to memory:", err.message);
     }
     return memoryFallback.keys(pattern);
   }
@@ -158,8 +205,10 @@ class RedisClient {
         return await this._client.flushAll();
       }
     } catch (err: any) {
-      console.warn("[Redis] flushAll failed, using memory:", err.message);
-      this._usingMemory = true;
+      if (this.isQuotaError(err)) {
+        this._usingMemory = true;
+      }
+      console.warn("[Redis] flushAll fallback to memory:", err.message);
     }
     return memoryFallback.flushAll();
   }
