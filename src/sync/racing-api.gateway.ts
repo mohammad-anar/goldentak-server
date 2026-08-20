@@ -92,13 +92,12 @@ class RacingApiGateway {
 
         if (!isRetryable(axiosErr)) break;
 
-        // 429 — respect Retry-After header
+        // 429 — respect Retry-After header or response body retry_after (default 30s)
         if (axiosErr.response?.status === 429) {
-          const retryAfter = parseInt(
-            (axiosErr.response.headers as any)["retry-after"] ?? "5",
-            10
-          );
-          console.warn(`[RacingApiGateway] Rate limited (429). Waiting ${retryAfter}s...`);
+          const bodyRetry = (axiosErr.response.data as any)?.retry_after;
+          const headerRetry = (axiosErr.response.headers as any)["retry-after"];
+          const retryAfter = parseInt(bodyRetry ?? headerRetry ?? "30", 10) || 30;
+          console.warn(`[RacingApiGateway] Rate limited (429). Waiting ${retryAfter}s before retrying...`);
           await new Promise((r) => setTimeout(r, retryAfter * 1000));
           continue;
         }

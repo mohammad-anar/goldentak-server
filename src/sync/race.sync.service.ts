@@ -130,6 +130,8 @@ export class RaceSyncService {
               errors.push(`Race ${card.race_id} (${region}): ${err.message}`);
             }
           }
+          // Small 1s delay between API calls to respect rate limits
+          await new Promise((r) => setTimeout(r, 1000));
         } catch (err: any) {
           errors.push(`Region ${region} date ${dateStr}: ${err.message}`);
         }
