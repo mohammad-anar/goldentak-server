@@ -99,9 +99,15 @@ export class EnrichmentService {
   // ─────────────────────────────────────────────────────────────────────────────
   static async enrichSire(externalId: string, name: string): Promise<boolean> {
     try {
-      let sire = await prisma.sire.findUnique({ where: { name } });
+      let sire = await prisma.sire.findFirst({
+        where: { OR: [{ externalId }, { name }] },
+      });
       if (!sire) {
-        sire = await prisma.sire.create({ data: { name, externalId } });
+        try {
+          sire = await prisma.sire.create({ data: { name, externalId } });
+        } catch {
+          sire = (await prisma.sire.findFirst({ where: { OR: [{ externalId }, { name }] } }))!;
+        }
       }
 
       // Fetch offspring results
@@ -159,9 +165,15 @@ export class EnrichmentService {
 
   static async enrichDam(externalId: string, name: string): Promise<boolean> {
     try {
-      let dam = await prisma.dam.findUnique({ where: { name } });
+      let dam = await prisma.dam.findFirst({
+        where: { OR: [{ externalId }, { name }] },
+      });
       if (!dam) {
-        dam = await prisma.dam.create({ data: { name, externalId } });
+        try {
+          dam = await prisma.dam.create({ data: { name, externalId } });
+        } catch {
+          dam = (await prisma.dam.findFirst({ where: { OR: [{ externalId }, { name }] } }))!;
+        }
       }
 
       const resultsData = await racingApiGateway.fetchDamResults(externalId, 100);
@@ -217,9 +229,15 @@ export class EnrichmentService {
 
   static async enrichDamSire(externalId: string, name: string): Promise<boolean> {
     try {
-      let damSire = await prisma.damSire.findUnique({ where: { name } });
+      let damSire = await prisma.damSire.findFirst({
+        where: { OR: [{ externalId }, { name }] },
+      });
       if (!damSire) {
-        damSire = await prisma.damSire.create({ data: { name, externalId } });
+        try {
+          damSire = await prisma.damSire.create({ data: { name, externalId } });
+        } catch {
+          damSire = (await prisma.damSire.findFirst({ where: { OR: [{ externalId }, { name }] } }))!;
+        }
       }
 
       const resultsData = await racingApiGateway.fetchDamSireResults(externalId, 100);

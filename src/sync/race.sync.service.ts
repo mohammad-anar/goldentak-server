@@ -327,46 +327,58 @@ export class RaceSyncService {
     // ── 1. Sire ────────────────────────────────────────────────────────────
     let sireModelId: string | null = null;
     if (runner.sire) {
-      let sire = await prisma.sire.findUnique({ where: { name: runner.sire } });
+      const extId = runner.sire_id?.toString() || `sire-${runner.sire.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+      let sire = await prisma.sire.findFirst({
+        where: { OR: [{ name: runner.sire }, { externalId: extId }] },
+      });
       if (!sire) {
-        sire = await prisma.sire.create({
-          data: {
-            name: runner.sire,
-            externalId: runner.sire_id?.toString() || `sire-${runner.sire.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-          },
-        });
+        try {
+          sire = await prisma.sire.create({
+            data: { name: runner.sire, externalId: extId },
+          });
+        } catch {
+          sire = await prisma.sire.findFirst({ where: { OR: [{ name: runner.sire }, { externalId: extId }] } });
+        }
       }
-      sireModelId = sire.id;
+      if (sire) sireModelId = sire.id;
     }
 
     // ── 2. Dam ─────────────────────────────────────────────────────────────
     let damModelId: string | null = null;
     if (runner.dam) {
-      let dam = await prisma.dam.findUnique({ where: { name: runner.dam } });
+      const extId = runner.dam_id?.toString() || `dam-${runner.dam.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+      let dam = await prisma.dam.findFirst({
+        where: { OR: [{ name: runner.dam }, { externalId: extId }] },
+      });
       if (!dam) {
-        dam = await prisma.dam.create({
-          data: {
-            name: runner.dam,
-            externalId: runner.dam_id?.toString() || `dam-${runner.dam.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-          },
-        });
+        try {
+          dam = await prisma.dam.create({
+            data: { name: runner.dam, externalId: extId },
+          });
+        } catch {
+          dam = await prisma.dam.findFirst({ where: { OR: [{ name: runner.dam }, { externalId: extId }] } });
+        }
       }
-      damModelId = dam.id;
+      if (dam) damModelId = dam.id;
     }
 
     // ── 3. DamSire ─────────────────────────────────────────────────────────
     let damSireModelId: string | null = null;
     if (runner.damsire) {
-      let damSire = await prisma.damSire.findUnique({ where: { name: runner.damsire } });
+      const extId = runner.damsire_id?.toString() || `damsire-${runner.damsire.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+      let damSire = await prisma.damSire.findFirst({
+        where: { OR: [{ name: runner.damsire }, { externalId: extId }] },
+      });
       if (!damSire) {
-        damSire = await prisma.damSire.create({
-          data: {
-            name: runner.damsire,
-            externalId: runner.damsire_id?.toString() || `damsire-${runner.damsire.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-          },
-        });
+        try {
+          damSire = await prisma.damSire.create({
+            data: { name: runner.damsire, externalId: extId },
+          });
+        } catch {
+          damSire = await prisma.damSire.findFirst({ where: { OR: [{ name: runner.damsire }, { externalId: extId }] } });
+        }
       }
-      damSireModelId = damSire.id;
+      if (damSire) damSireModelId = damSire.id;
     }
 
     // ── 4. Horse ───────────────────────────────────────────────────────────
