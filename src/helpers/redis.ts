@@ -5,8 +5,21 @@ import path from "path";
 
 dotenv.config({ path: path.join(process.cwd(), ".env") });
 
+function cleanRedisUrl(raw?: string): string {
+  if (!raw) return "redis://localhost:6379";
+  let url = raw.trim();
+  if (url.includes("-u ")) {
+    url = url.split("-u ").pop()!.trim();
+  }
+  url = url.replace(/^['"]|['"]$/g, "");
+  if (url.includes("upstash.io") && url.startsWith("redis://")) {
+    url = url.replace("redis://", "rediss://");
+  }
+  return url;
+}
+
 // ── IORedis client (used by BullMQ) ───────────────────────────────────────────
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const redisUrl = cleanRedisUrl(process.env.REDIS_URL);
 
 export const bullRedisConnection = new (IORedis as any)(redisUrl, {
   maxRetriesPerRequest: null, // Required by BullMQ
@@ -91,7 +104,7 @@ class RedisClient {
     if (this._connecting) return;
     this._connecting = true;
 
-    const url = process.env.REDIS_URL || "redis://localhost:6379";
+    const url = cleanRedisUrl(process.env.REDIS_URL);
 
     try {
       const client = createClient({
