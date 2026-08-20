@@ -33,18 +33,35 @@ async function main() {
       console.log(`- Status: ${s.status}, Count: ${s._count.id}`);
     }
 
-    const races = await prisma.race.findMany({
-      take: 5,
-      orderBy: { date: 'desc' },
-      include: {
-        _count: {
-          select: { entries: true }
-        }
-      }
+    const countries = await prisma.race.groupBy({
+      by: ['country'],
+      _count: { id: true },
+      orderBy: { country: 'asc' }
     });
-    console.log('\nSample Races:');
-    for (const r of races) {
-      console.log(`ID: ${r.id}, Name: ${r.name}, Location: ${r.location}, Date: ${r.date.toISOString().split('T')[0]}, Status: ${r.status}, Prediction: "${r.predictionMessage?.substring(0, 60)}...", Runners: ${r._count.entries}`);
+    console.log('\nRaces by Country:');
+    for (const c of countries) {
+      console.log(`- Country: ${c.country}, Count: ${c._count.id}`);
+    }
+
+    const allRaces = await prisma.race.findMany();
+    console.log(`\nUpdating ${allRaces.length} races with accurate country/region...`);
+    const { detectRegionAndCountry } = await import('./sync/race.sync.service.js');
+    for (const r of allRaces) {
+      const { region, country } = detectRegionAndCountry({ course: r.location, location: r.location, region: r.region }, r.region || 'gb');
+      await prisma.race.update({
+        where: { id: r.id },
+        data: { region, country }
+      });
+    }
+
+    const updatedCountries = await prisma.race.groupBy({
+      by: ['country'],
+      _count: { id: true },
+      orderBy: { country: 'asc' }
+    });
+    console.log('\nUpdated Races by Country:');
+    for (const c of updatedCountries) {
+      console.log(`- Country: ${c.country}, Count: ${c._count.id}`);
     }
   }
 }

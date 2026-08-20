@@ -8,14 +8,59 @@ import { Queues, JOB_NAMES } from "../queues/queue.registry.js";
 function getCountryName(region: string): string {
   const mapping: Record<string, string> = {
     gb: "United Kingdom",
+    uk: "United Kingdom",
     ire: "Ireland",
+    ie: "Ireland",
     usa: "United States",
+    us: "United States",
     aus: "Australia",
+    au: "Australia",
     fr: "France",
     za: "South Africa",
     uae: "United Arab Emirates",
   };
   return mapping[region.toLowerCase()] || "United Kingdom";
+}
+
+export function detectRegionAndCountry(card: any, fallbackRegion: string = "gb"): { region: string; country: string } {
+  const course = (card.course || card.location || "").toString().toLowerCase().trim();
+  let r = (card.region || card.region_code || card.country_code || "").toString().toLowerCase().trim();
+
+  const irishCourses = [
+    "leopardstown", "killarney", "curragh", "punchestown", "fairyhouse", "naas", 
+    "galway", "cork", "gowran park", "listowel", "navan", "roscommon", "sligo", 
+    "tipperary", "tramore", "wexford", "ballinrobe", "bellewstown", "clonmel", 
+    "down royal", "downpatrick", "dundalk", "kilbeggan", "laytown", "thurles"
+  ];
+  const frenchCourses = [
+    "deauville", "chantilly", "longchamp", "parislongchamp", "saint-cloud", "auteuil", 
+    "compiegne", "fontainebleau", "lyon-parilly", "marseille-borely", "vichy", "pau", 
+    "toulouse", "cagnes-sur-mer"
+  ];
+  const ukCourses = [
+    "york", "ascot", "chester", "newmarket", "goodwood", "doncaster", "kempton", 
+    "haydock", "sandown", "cheltenham", "epsom", "newcastle", "ripon", "hamilton", 
+    "carlisle", "bath", "beverley", "brighton", "catterick", "chepstow", "fakenham", 
+    "fontwell", "hereford", "hexham", "huntingdon", "kelso", "leicester", "lingfield", 
+    "ludlow", "musselburgh", "newbury", "nottingham", "perth", "plumpton", "redcar", 
+    "salisbury", "sedgefield", "southwell", "stratford", "taunton", "thirsk", "uttoxeter", 
+    "warwick", "wetherby", "wincanton", "windsor", "wolverhampton", "worcester", "yarmouth"
+  ];
+
+  if (irishCourses.some(c => course.includes(c))) {
+    r = "ire";
+  } else if (frenchCourses.some(c => course.includes(c))) {
+    r = "fr";
+  } else if (ukCourses.some(c => course.includes(c))) {
+    r = "gb";
+  } else if (!r) {
+    r = fallbackRegion.toLowerCase().trim();
+  }
+
+  return {
+    region: r,
+    country: getCountryName(r),
+  };
 }
 
 function parseWeight(weightStr: string | null | undefined): number {
@@ -200,14 +245,16 @@ export class RaceSyncService {
     const externalId = card.race_id?.toString();
     if (!externalId) throw new Error("Missing race_id");
 
+    const { region: detectedRegion, country: detectedCountry } = detectRegionAndCountry(card, region);
+
     const raceData = {
       externalId,
       name:           card.race_name || "Unknown Race",
       date:           new Date(card.date),
       time:           card.off_time || "",
       location:       card.course || "Unknown Course",
-      country:        getCountryName(region),
-      region:         region,
+      country:        detectedCountry,
+      region:         detectedRegion,
       surface:        card.surface || null,
       distance:       card.distance_f ? `${card.distance_f}f` : null,
       distanceF:      card.distance_f?.toString() || null,

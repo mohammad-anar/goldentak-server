@@ -35,7 +35,22 @@ const getAllRaces = async (filters: any) => {
 
   if (location) where.location = location;
   if (status)   where.status   = status as RaceStatus;
-  if (country)  where.country  = country;
+  if (country) {
+    const cUpper = country.trim().toUpperCase();
+    if (cUpper === 'GB' || cUpper === 'UK') {
+      where.OR = [{ country: 'United Kingdom' }, { country: 'GB' }, { region: 'gb' }];
+    } else if (cUpper === 'IRE' || cUpper === 'IE') {
+      where.OR = [{ country: 'Ireland' }, { country: 'IRE' }, { region: 'ire' }];
+    } else if (cUpper === 'FR') {
+      where.OR = [{ country: 'France' }, { country: 'FR' }, { region: 'fr' }];
+    } else if (cUpper === 'USA' || cUpper === 'US') {
+      where.OR = [{ country: 'United States' }, { country: 'USA' }, { region: 'usa' }];
+    } else if (cUpper === 'AUS' || cUpper === 'AU') {
+      where.OR = [{ country: 'Australia' }, { country: 'AUS' }, { region: 'aus' }];
+    } else {
+      where.country = { contains: country, mode: "insensitive" };
+    }
+  }
 
   if (search) {
     where.OR = [
@@ -241,7 +256,22 @@ const getRaceLocations = async (filters: any) => {
         where.date = { gte: s, lte: e };
       }
       if (status)  where.status  = status as RaceStatus;
-      if (country) where.country = country;
+      if (country) {
+        const cUpper = country.trim().toUpperCase();
+        if (cUpper === 'GB' || cUpper === 'UK') {
+          where.OR = [{ country: 'United Kingdom' }, { country: 'GB' }, { region: 'gb' }];
+        } else if (cUpper === 'IRE' || cUpper === 'IE') {
+          where.OR = [{ country: 'Ireland' }, { country: 'IRE' }, { region: 'ire' }];
+        } else if (cUpper === 'FR') {
+          where.OR = [{ country: 'France' }, { country: 'FR' }, { region: 'fr' }];
+        } else if (cUpper === 'USA' || cUpper === 'US') {
+          where.OR = [{ country: 'United States' }, { country: 'USA' }, { region: 'usa' }];
+        } else if (cUpper === 'AUS' || cUpper === 'AU') {
+          where.OR = [{ country: 'Australia' }, { country: 'AUS' }, { region: 'aus' }];
+        } else {
+          where.country = { contains: country, mode: "insensitive" };
+        }
+      }
       if (search) {
         where.OR = [
           { country:  { contains: search, mode: "insensitive" } },
