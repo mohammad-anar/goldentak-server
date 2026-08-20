@@ -24,7 +24,7 @@ function getCountryName(region: string): string {
 
 export function detectRegionAndCountry(card: any, fallbackRegion: string = "gb"): { region: string; country: string } {
   const course = (card.course || card.location || "").toString().toLowerCase().trim();
-  let r = (card.region || card.region_code || card.country_code || "").toString().toLowerCase().trim();
+  let rawRegion = (card.region || card.region_code || card.country_code || "").toString().toLowerCase().trim();
 
   const irishCourses = [
     "leopardstown", "killarney", "curragh", "punchestown", "fairyhouse", "naas", 
@@ -35,25 +35,30 @@ export function detectRegionAndCountry(card: any, fallbackRegion: string = "gb")
   const frenchCourses = [
     "deauville", "chantilly", "longchamp", "parislongchamp", "saint-cloud", "auteuil", 
     "compiegne", "fontainebleau", "lyon-parilly", "marseille-borely", "vichy", "pau", 
-    "toulouse", "cagnes-sur-mer"
+    "toulouse", "cagnes-sur-mer", "chateaubriant", "clairefontaine", "vincennes", "dieppe",
+    "craon", "cholet", "strasbourg", "cabourg", "graignes", "tarbes", "le lion d'angers"
   ];
   const ukCourses = [
-    "york", "ascot", "chester", "newmarket", "goodwood", "doncaster", "kempton", 
+    "ayr", "york", "ascot", "chester", "newmarket", "goodwood", "doncaster", "kempton", 
     "haydock", "sandown", "cheltenham", "epsom", "newcastle", "ripon", "hamilton", 
     "carlisle", "bath", "beverley", "brighton", "catterick", "chepstow", "fakenham", 
     "fontwell", "hereford", "hexham", "huntingdon", "kelso", "leicester", "lingfield", 
     "ludlow", "musselburgh", "newbury", "nottingham", "perth", "plumpton", "redcar", 
     "salisbury", "sedgefield", "southwell", "stratford", "taunton", "thirsk", "uttoxeter", 
-    "warwick", "wetherby", "wincanton", "windsor", "wolverhampton", "worcester", "yarmouth"
+    "warwick", "wetherby", "wincanton", "windsor", "wolverhampton", "worcester", "yarmouth",
+    "cartmel", "bangor-on-dee", "bangor", "towcester"
   ];
 
+  let r = "";
   if (irishCourses.some(c => course.includes(c))) {
     r = "ire";
   } else if (frenchCourses.some(c => course.includes(c))) {
     r = "fr";
   } else if (ukCourses.some(c => course.includes(c))) {
     r = "gb";
-  } else if (!r) {
+  } else if (rawRegion && ["gb", "uk", "ire", "ie", "fr", "usa", "us", "aus", "au", "za", "uae"].includes(rawRegion)) {
+    r = rawRegion;
+  } else {
     r = fallbackRegion.toLowerCase().trim();
   }
 
@@ -104,7 +109,7 @@ export class RaceSyncService {
     let updated = 0;
     const errors: string[] = [];
 
-    const regions = (process.env.RACING_API_REGIONS || "gb,ire")
+    const regions = (process.env.RACING_API_REGIONS || "gb,ire,fr,usa,aus")
       .split(",")
       .map((r) => r.trim().toLowerCase())
       .filter((r) => r.length > 0);
@@ -155,7 +160,7 @@ export class RaceSyncService {
     let updated = 0;
     const errors: string[] = [];
 
-    const regions = (process.env.RACING_API_REGIONS || "gb,ire")
+    const regions = (process.env.RACING_API_REGIONS || "gb,ire,fr,usa,aus")
       .split(",")
       .map((r) => r.trim().toLowerCase())
       .filter((r) => r.length > 0);
