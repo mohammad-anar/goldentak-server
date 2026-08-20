@@ -98,11 +98,76 @@ const getRaceById = async (id: string) => {
     where: { id },
     include: {
       entries: {
-        include: { horse: true, jockey: true, trainer: true },
+        include: {
+          horse: {
+            select: {
+              id: true,
+              externalId: true,
+              name: true,
+              age: true,
+              colour: true,
+              sex: true,
+              sireName: true,
+              damName: true,
+              damSireName: true,
+              owner: true,
+              trainer: true,
+              country: true,
+              totalEarnings: true,
+              bestTime: true,
+              bestTimeLocation: true,
+              totalRaces: true,
+              wins: true,
+              seconds: true,
+              thirds: true,
+              fourths: true,
+            },
+          },
+          jockey: {
+            select: {
+              id: true,
+              name: true,
+              totalRides: true,
+              wins: true,
+              seconds: true,
+              thirds: true,
+              fourths: true,
+              ridesLast30d: true,
+              winsLast30d: true,
+            },
+          },
+          trainer: {
+            select: {
+              id: true,
+              name: true,
+              totalRuns: true,
+              wins: true,
+              seconds: true,
+              thirds: true,
+              fourths: true,
+            },
+          },
+        },
         orderBy: [{ rank: "asc" }, { normalizedScore: "desc" }],
       },
       results: {
-        include: { horse: true, jockey: true },
+        include: {
+          horse: {
+            select: {
+              id: true,
+              name: true,
+              totalEarnings: true,
+              wins: true,
+              totalRaces: true,
+            },
+          },
+          jockey: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
       },
     },
   });
