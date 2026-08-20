@@ -18,13 +18,13 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY . .
 
 # Generate Prisma Client
-RUN DATABASE_URL="postgresql://postgres:123456@db:5432/fantasy_ufc?schema=public" npx prisma generate
+RUN DATABASE_URL="postgresql://postgres:123456@postgres:5432/goldentak_db?schema=public" npx prisma generate
 
 # Build the application
 RUN npm run build
 
 # Expose the port the app runs on
-EXPOSE 5000
+EXPOSE 5001
 
 # Start the application
 CMD ["pnpm", "run", "start:prod"]

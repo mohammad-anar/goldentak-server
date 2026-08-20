@@ -21,6 +21,25 @@ services:
     volumes:
       - redis_data:/data
 
+  app:
+    build: .
+    container_name: goldentak_app
+    restart: always
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=development
+      - PORT=5001
+      - DATABASE_URL=postgresql://postgres:123456@postgres:5432/goldentak_db?schema=public
+      - DIRECT_URL=postgresql://postgres:123456@postgres:5432/goldentak_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your_jwt_secret_key_here
+      - RACING_API_KEY=i89tdOwRYpbeFapUiduvyQ1C
+      - RACING_API_SECRET=SftrRFyNKbvugc7XcY0mCmxM
+    depends_on:
+      - postgres
+      - redis
+
 volumes:
   postgres_data:
   redis_data:
