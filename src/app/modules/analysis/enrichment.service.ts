@@ -53,7 +53,7 @@ export class EnrichmentService {
       } catch (e) {}
 
       // 4. Update Horse
-      await prisma.horse.update({
+      await prisma.horse.updateMany({
         where: { id: horseId },
         data: {
           age: profile.dob ? new Date().getFullYear() - new Date(profile.dob).getFullYear() : undefined,
@@ -327,7 +327,7 @@ export class EnrichmentService {
       let ownerAnalysis = null;
       try { ownerAnalysis = await racingApiGateway.fetchJockeyOwnerAnalysis(externalId); } catch (e) {}
 
-      await prisma.jockey.update({
+      await prisma.jockey.updateMany({
         where: { id: jockeyId },
         data: {
           totalRides,
@@ -389,7 +389,7 @@ export class EnrichmentService {
       let horseAgeAnalysis = null;
       try { horseAgeAnalysis = await racingApiGateway.fetchTrainerHorseAgeAnalysis(externalId); } catch (e) {}
 
-      await prisma.trainer.update({
+      await prisma.trainer.updateMany({
         where: { id: trainerId },
         data: {
           totalRuns,
