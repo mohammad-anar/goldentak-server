@@ -35,6 +35,7 @@ function retryDelay(attempt: number, jitter = true): number {
 
 function isRetryable(error: AxiosError): boolean {
   if (!error.response) return true; // Network error — always retry
+  // 404 = resource genuinely not found (no Pro coverage, race has no odds, etc.) — never retry
   return [429, 503, 504].includes(error.response.status);
 }
 
@@ -90,7 +91,13 @@ class RacingApiGateway {
           }
         }
 
-        if (!isRetryable(axiosErr)) break;
+        if (!isRetryable(axiosErr)) {
+          // For 404, log at warn level (not error) to reduce noise
+          if (axiosErr.response?.status === 404) {
+            console.warn(`[RacingApiGateway] 404 Not Found for ${url} — skipping retries.`);
+          }
+          break;
+        }
 
         // 429 — respect Retry-After header or response body retry_after (default 30s)
         if (axiosErr.response?.status === 429) {
@@ -114,7 +121,12 @@ class RacingApiGateway {
 
     const status  = lastError?.response?.status ?? 0;
     const message = lastError?.message ?? "Unknown error";
-    console.error(`[RacingApiGateway] All retries exhausted for ${url}: ${status} ${message}`);
+    // 404 = expected (no coverage on Pro plan) — warn, not error
+    if (status === 404) {
+      console.warn(`[RacingApiGateway] Not found (404) for ${url} — no Pro coverage, skipped.`);
+    } else {
+      console.error(`[RacingApiGateway] All retries exhausted for ${url}: ${status} ${message}`);
+    }
     throw lastError ?? new Error(`Request to ${url} failed after ${MAX_RETRIES} attempts`);
   }
 

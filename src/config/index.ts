@@ -40,6 +40,7 @@ export default {
     issuerId: process.env.APPLE_ISSUER_ID,
     privateKey: process.env.APPLE_PRIVATE_KEY,
     bundleId: process.env.APPLE_BUNDLE_ID,
+    password: process.env.APPLE_SHARED_SECRET || process.env.APPLE_PASSWORD,
   },
   racing: {
     apiKey: process.env.RACING_API_KEY,

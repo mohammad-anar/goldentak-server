@@ -5,15 +5,12 @@
   "author": "azan",
   "license": "MIT",
   "type": "module",
-  "prisma": {
-    "schema": "./prisma/schema",
-    "seed": "tsx prisma/seed.ts"
-  },
   "scripts": {
     "dev": "tsx watch ./src/server.ts",
     "start": "tsx ./src/server.ts",
     "build": "tsc",
     "postinstall": "prisma generate",
+    "seed": "tsx prisma/seed.ts",
     "start:prod": "node dist/server.js"
   },
   "dependencies": {

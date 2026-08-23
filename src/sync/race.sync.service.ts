@@ -203,10 +203,12 @@ export class RaceSyncService {
     };
   }
 
-  static async enqueueEnrichment(raceId: string, externalId: string): Promise<void> {
+  static async enqueueEnrichment(raceId: string, externalId: string, raceStatus?: string): Promise<void> {
     try {
-      // 1. Enqueue odds sync
-      await Queues.odds.add(JOB_NAMES.SYNC_LIVE_ODDS, { raceId, externalId }, { priority: 2 });
+      // 1. Only enqueue odds sync for upcoming/live races — the API has no odds for finished races
+      if (raceStatus !== "FINISHED") {
+        await Queues.odds.add(JOB_NAMES.SYNC_LIVE_ODDS, { raceId, externalId }, { priority: 2 });
+      }
 
       // 2. Query entries to get horses, jockeys, trainers IDs
       const entries = await prisma.raceEntry.findMany({
@@ -311,7 +313,7 @@ export class RaceSyncService {
     // Queue enrichment jobs
     const raceId = existing ? existing.id : (await prisma.race.findUnique({ where: { externalId }, select: { id: true } }))?.id;
     if (raceId) {
-      await RaceSyncService.enqueueEnrichment(raceId, externalId);
+      await RaceSyncService.enqueueEnrichment(raceId, externalId, status);
     }
 
     return existing ? "updated" : "created";

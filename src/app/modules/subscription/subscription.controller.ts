@@ -58,15 +58,24 @@ const verifyGoogleSubscription = catchAsync(async (req: Request, res: Response) 
 });
 
 const verifyAppleSubscription = catchAsync(async (req: Request, res: Response) => {
-  const { deviceId, signedTransactionInfo } = req.body;
-  if (!deviceId || !signedTransactionInfo) {
+  const { deviceId, signedTransactionInfo, receiptData, transactionId, productId } = req.body;
+  const receipt = receiptData || signedTransactionInfo;
+
+  if (!deviceId || (!receipt && !transactionId)) {
     return res.status(StatusCodes.BAD_REQUEST).json({
       success: false,
-      message: "deviceId and signedTransactionInfo are required fields",
+      message: "deviceId and at least one of receiptData, signedTransactionInfo, or transactionId are required fields",
     });
   }
 
-  const result = await SubscriptionService.verifyAppleSubscription(deviceId, signedTransactionInfo);
+  const result = await SubscriptionService.verifyAppleSubscription(deviceId, {
+    signedTransactionInfo,
+    receiptData,
+    transactionId,
+    productId,
+    deviceId,
+  });
+
   sendResponse(res, {
     statusCode: StatusCodes.OK,
     success: true,
@@ -92,16 +101,6 @@ const handleAppleWebhook = catchAsync(async (req: Request, res: Response) => {
   res.status(StatusCodes.OK).json(result);
 });
 
-const getPlans = catchAsync(async (req: Request, res: Response) => {
-  const result = await SubscriptionService.getPlans();
-  sendResponse(res, {
-    statusCode: StatusCodes.OK,
-    success: true,
-    message: "Subscription plans fetched successfully",
-    data: result,
-  });
-});
-
 export const SubscriptionController = {
   createSubscription,
   getSubscriptionOverview,
@@ -110,5 +109,4 @@ export const SubscriptionController = {
   verifyAppleSubscription,
   handleGoogleWebhook,
   handleAppleWebhook,
-  getPlans,
 };

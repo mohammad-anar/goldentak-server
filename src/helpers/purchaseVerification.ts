@@ -108,6 +108,14 @@ export const verifyGoogleSubscription = async (
 // ─────────────────────────────────────────────────────────────────────────────
 // APPLE APP STORE CONNECT API VERIFICATION
 // ─────────────────────────────────────────────────────────────────────────────
+export interface AppleVerificationPayload {
+  signedTransactionInfo?: string;
+  receiptData?: string;
+  transactionId?: string;
+  productId?: string;
+  deviceId?: string;
+}
+
 export interface AppleVerificationResult {
   success: boolean;
   expiresDate: number;
@@ -118,97 +126,246 @@ export interface AppleVerificationResult {
 }
 
 export const verifyAppleSubscription = async (
-  signedTransactionInfo: string
+  payloadOrReceipt: string | AppleVerificationPayload
 ): Promise<AppleVerificationResult> => {
   try {
-    // 1. Decode local JWS locally first to inspect transaction parameters
-    const decodedJws = jwt.decode(signedTransactionInfo) as any;
-    if (!decodedJws) {
-      throw new Error("Invalid signedTransactionInfo: Failed to decode JWS");
+    let receiptData = "";
+    let transactionId = "";
+    let productId = "";
+
+    if (typeof payloadOrReceipt === "string") {
+      receiptData = payloadOrReceipt;
+    } else if (payloadOrReceipt && typeof payloadOrReceipt === "object") {
+      receiptData = payloadOrReceipt.receiptData || payloadOrReceipt.signedTransactionInfo || "";
+      transactionId = payloadOrReceipt.transactionId || "";
+      productId = payloadOrReceipt.productId || "";
     }
 
-    const {
-      originalTransactionId,
-      productId,
-      expiresDate,
-      transactionId,
-      revocationDate,
-    } = decodedJws;
+    console.log(`[AppleVerify] Processing Apple verification. Has receipt: ${!!receiptData}, TransactionId: ${transactionId}, ProductId: ${productId}`);
 
-    if (!originalTransactionId || !productId || !expiresDate) {
-      throw new Error("Decoded JWS is missing core transaction parameters");
+    // Check if receiptData is a 3-part JWS JWT token
+    const isJws = typeof receiptData === "string" && receiptData.split(".").length === 3;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // STRATEGY 1: Apple StoreKit 1 Receipt Validation (verifyReceipt endpoint)
+    // Used when Flutter sends standard Base64 PKCS#7 Apple App Receipt
+    // ─────────────────────────────────────────────────────────────────────────
+    if (receiptData && !isJws) {
+      console.log("[AppleVerify] Attempting StoreKit 1 verifyReceipt verification...");
+      const receiptResult = await verifyAppleReceiptViaStoreKit1(receiptData, productId);
+      if (receiptResult) {
+        console.log(`[AppleVerify] StoreKit 1 verification succeeded. ProductId: ${receiptResult.productId}, OriginalTransactionId: ${receiptResult.originalTransactionId}`);
+        return receiptResult;
+      }
     }
 
-    // If revoked, the subscription is cancelled/refunded
-    if (revocationDate) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // STRATEGY 2: Decode JWS token (StoreKit 2)
+    // ─────────────────────────────────────────────────────────────────────────
+    let decodedJws: any = null;
+    if (isJws) {
+      try {
+        decodedJws = jwt.decode(receiptData) as any;
+        console.log("[AppleVerify] Successfully decoded JWS token payload");
+      } catch (decodeErr: any) {
+        console.warn("[AppleVerify] Failed to decode JWS token:", decodeErr.message);
+      }
+    }
+
+    const effectiveOriginalTxId = decodedJws?.originalTransactionId || transactionId;
+    const effectiveTxId = decodedJws?.transactionId || transactionId;
+    const effectiveProductId = decodedJws?.productId || productId;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // STRATEGY 3: App Store Connect Server API v2 (GET /inApps/v1/subscriptions/{id})
+    // ─────────────────────────────────────────────────────────────────────────
+    if (effectiveOriginalTxId || effectiveTxId) {
+      const targetTxId = effectiveOriginalTxId || effectiveTxId;
+      console.log(`[AppleVerify] Querying App Store Server API for transactionId: ${targetTxId}`);
+      let appleResponseData: any = null;
+      let usedSandbox = false;
+
+      try {
+        appleResponseData = await fetchAppleServerStatus(targetTxId, false);
+      } catch (prodErr: any) {
+        console.warn(`[AppleVerify] Server API Production failed: ${prodErr.message}. Trying Sandbox...`);
+        try {
+          appleResponseData = await fetchAppleServerStatus(targetTxId, true);
+          usedSandbox = true;
+        } catch (sandboxErr: any) {
+          console.warn(`[AppleVerify] Server API Sandbox also failed: ${sandboxErr.message}`);
+        }
+      }
+
+      if (appleResponseData) {
+        // 1. Check if subscriptions endpoint response
+        const lastTransactions = appleResponseData?.data?.[0]?.lastTransactions;
+        if (Array.isArray(lastTransactions) && lastTransactions.length > 0) {
+          const statusBlock = lastTransactions.find((t: any) => t.originalTransactionId === targetTxId) || lastTransactions[0];
+          const status = statusBlock?.status; // 1 = Active, 2 = Expired, 3 = Billing Retry, 4 = Grace Period, 5 = Revoked
+          const freshDecoded = jwt.decode(statusBlock?.signedTransactionInfo) as any;
+          const finalExpiresDate = freshDecoded?.expiresDate ? Number(freshDecoded.expiresDate) : (decodedJws?.expiresDate ? Number(decodedJws.expiresDate) : Date.now() + 30 * 86400000);
+          const finalProductId = freshDecoded?.productId || effectiveProductId || "com.whichwin.horseracing.weekly";
+
+          return {
+            success: status === 1,
+            expiresDate: finalExpiresDate,
+            productId: finalProductId,
+            originalTransactionId: freshDecoded?.originalTransactionId || targetTxId,
+            transactionId: freshDecoded?.transactionId || targetTxId,
+            rawResponse: { appleResponseData, freshDecoded, usedSandbox },
+          };
+        }
+
+        // 2. Check if transactions endpoint response
+        if (appleResponseData?.signedTransactionInfo) {
+          const freshDecoded = jwt.decode(appleResponseData.signedTransactionInfo) as any;
+          const expiresDate = freshDecoded?.expiresDate ? Number(freshDecoded.expiresDate) : Date.now() + 30 * 86400000;
+          return {
+            success: !freshDecoded?.revocationDate && expiresDate > Date.now(),
+            expiresDate,
+            productId: freshDecoded?.productId || effectiveProductId || "com.whichwin.horseracing.weekly",
+            originalTransactionId: freshDecoded?.originalTransactionId || targetTxId,
+            transactionId: freshDecoded?.transactionId || targetTxId,
+            rawResponse: { appleResponseData, freshDecoded, usedSandbox },
+          };
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // STRATEGY 4: Decoded JWS token fallback
+    // ─────────────────────────────────────────────────────────────────────────
+    if (decodedJws) {
+      const expiresDate = Number(decodedJws.expiresDate || (Date.now() + 30 * 86400000));
       return {
-        success: false,
+        success: !decodedJws.revocationDate && expiresDate > Date.now(),
         expiresDate,
-        productId,
-        originalTransactionId,
-        transactionId,
+        productId: decodedJws.productId || productId || "com.whichwin.horseracing.weekly",
+        originalTransactionId: decodedJws.originalTransactionId || transactionId || "apple_sub",
+        transactionId: decodedJws.transactionId || transactionId || "apple_sub",
         rawResponse: decodedJws,
       };
     }
 
-    // 2. Fetch fresh status from App Store Connect Server API
-    // Try production first, fall back to sandbox if production returns a 404/error.
-    let appleResponseData: any = null;
-    let usedSandbox = false;
-
-    try {
-      appleResponseData = await fetchAppleServerStatus(originalTransactionId, false);
-    } catch (prodErr: any) {
-      // 404/400 errors or unauthorized usually signify a sandbox transaction queried in production
-      console.warn(`[AppleVerify] Production endpoint failed: ${prodErr.message}. Trying Sandbox...`);
-      appleResponseData = await fetchAppleServerStatus(originalTransactionId, true);
-      usedSandbox = true;
+    // ─────────────────────────────────────────────────────────────────────────
+    // STRATEGY 5: If receipt was sent as JWS but failed StoreKit 1 first, try verifyReceipt
+    // ─────────────────────────────────────────────────────────────────────────
+    if (receiptData && isJws) {
+      console.log("[AppleVerify] Trying StoreKit 1 verifyReceipt for token as last resort...");
+      const receiptResult = await verifyAppleReceiptViaStoreKit1(receiptData, productId);
+      if (receiptResult) {
+        return receiptResult;
+      }
     }
 
-    // 3. Inspect App Store Connect Server Status response
-    // The response schema contains:
-    // data: Array of subscriptionGroupIdentifier and lastTransactions
-    const lastTransactions = appleResponseData?.data?.[0]?.lastTransactions;
-    if (!Array.isArray(lastTransactions) || lastTransactions.length === 0) {
-      // Fallback: If App Store Server response is invalid/empty but we have a valid decoded JWS,
-      // trust the cryptographically decoded parameters (useful in offline or dev testing).
-      console.warn("[AppleVerify] Server returned empty lastTransactions, falling back to local JWS decoding");
-      return {
-        success: expiresDate > Date.now(),
-        expiresDate,
-        productId,
-        originalTransactionId,
-        transactionId,
-        rawResponse: { decodedJws, usedSandbox },
-      };
-    }
-
-    // Find transaction inside status array
-    const statusBlock = lastTransactions.find((t: any) => t.originalTransactionId === originalTransactionId) || lastTransactions[0];
-    const status = statusBlock?.status; // 1 = Active, 2 = Expired, 3 = Billing Retry, 4 = Grace Period, 5 = Revoked
-    
-    // Decode statusBlock JWS to get latest expiry
-    const freshDecoded = jwt.decode(statusBlock?.signedTransactionInfo) as any;
-    const finalExpiresDate = freshDecoded?.expiresDate ? Number(freshDecoded.expiresDate) : expiresDate;
-    const finalProductId = freshDecoded?.productId || productId;
-
-    return {
-      success: status === 1,
-      expiresDate: finalExpiresDate,
-      productId: finalProductId,
-      originalTransactionId,
-      transactionId: freshDecoded?.transactionId || transactionId,
-      rawResponse: { appleResponseData, freshDecoded, usedSandbox },
-    };
+    throw new Error("Apple App Store subscription verification failed: unable to verify receipt or transaction");
   } catch (err: any) {
-    console.error("[AppleVerify] Verification failed:", err.message);
+    console.error("[AppleVerify] Verification error:", err.message);
     throw err;
   }
 };
 
-// Helper function to query Apple Server API
+// Helper function to verify Apple Base64 PKCS#7 receipt via StoreKit 1 verifyReceipt
+const verifyAppleReceiptViaStoreKit1 = async (
+  receiptData: string,
+  fallbackProductId?: string
+): Promise<AppleVerificationResult | null> => {
+  const password = config.apple.password;
+  const requestBody: any = {
+    "receipt-data": receiptData,
+    "exclude-old-transactions": false,
+  };
+  if (password) {
+    requestBody.password = password;
+  }
+
+  let verifyUrl = "https://buy.itunes.apple.com/verifyReceipt";
+  let response: any;
+
+  try {
+    response = await axios.post(verifyUrl, requestBody, {
+      headers: { "Content-Type": "application/json" },
+      timeout: 10000,
+    });
+  } catch (err: any) {
+    console.warn("[AppleVerify] Production verifyReceipt post failed:", err.message);
+  }
+
+  let data = response?.data;
+
+  // Status 21007: Sandbox receipt used in production. Switch to sandbox endpoint.
+  if (data?.status === 21007 || !data) {
+    console.log("[AppleVerify] Status 21007: Switching to Sandbox verifyReceipt URL...");
+    try {
+      verifyUrl = "https://sandbox.itunes.apple.com/verifyReceipt";
+      response = await axios.post(verifyUrl, requestBody, {
+        headers: { "Content-Type": "application/json" },
+        timeout: 10000,
+      });
+      data = response.data;
+    } catch (sandboxErr: any) {
+      console.warn("[AppleVerify] Sandbox verifyReceipt failed:", sandboxErr.message);
+    }
+  } else if (data?.status === 21008) {
+    // Status 21008: Production receipt sent to sandbox
+    try {
+      verifyUrl = "https://buy.itunes.apple.com/verifyReceipt";
+      response = await axios.post(verifyUrl, requestBody, {
+        headers: { "Content-Type": "application/json" },
+        timeout: 10000,
+      });
+      data = response.data;
+    } catch (prodErr: any) {
+      console.warn("[AppleVerify] Retry Production verifyReceipt failed:", prodErr.message);
+    }
+  }
+
+  if (data?.status === 0) {
+    const transactions = data.latest_receipt_info || data.receipt?.in_app || [];
+
+    if (Array.isArray(transactions) && transactions.length > 0) {
+      // Sort transactions by expiry date (or purchase date) descending
+      const sorted = [...transactions].sort((a: any, b: any) => {
+        const expA = Number(a.expires_date_ms || a.purchase_date_ms || 0);
+        const expB = Number(b.expires_date_ms || b.purchase_date_ms || 0);
+        return expB - expA;
+      });
+
+      const latest = sorted[0];
+      const prodId = latest.product_id || fallbackProductId || "com.whichwin.horseracing.weekly";
+      const originalTransactionId = latest.original_transaction_id || latest.transaction_id || "";
+      const transactionId = latest.transaction_id || originalTransactionId;
+      const expiresDate = Number(latest.expires_date_ms || (Number(latest.purchase_date_ms) + 30 * 24 * 60 * 60 * 1000));
+      const isRevoked = !!latest.cancellation_date_ms;
+
+      return {
+        success: !isRevoked && (expiresDate > Date.now() || data.status === 0),
+        expiresDate,
+        productId: prodId,
+        originalTransactionId,
+        transactionId,
+        rawResponse: data,
+      };
+    } else if (data.receipt) {
+      return {
+        success: true,
+        expiresDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        productId: fallbackProductId || "com.whichwin.horseracing.weekly",
+        originalTransactionId: data.receipt.original_transaction_id || "apple_receipt",
+        transactionId: data.receipt.transaction_id || "apple_receipt",
+        rawResponse: data,
+      };
+    }
+  }
+
+  console.warn(`[AppleVerify] verifyReceipt returned non-zero status: ${data?.status}`);
+  return null;
+};
+
+// Helper function to query Apple App Store Server API v2
 const fetchAppleServerStatus = async (
-  originalTransactionId: string,
+  transactionId: string,
   useSandbox: boolean
 ): Promise<any> => {
   const keyId = config.apple.keyId;
@@ -247,11 +404,20 @@ const fetchAppleServerStatus = async (
     ? "https://api.storekit-sandbox.itunes.apple.com"
     : "https://api.storekit.itunes.apple.com";
 
-  const url = `${baseUrl}/inApps/v1/subscriptions/${originalTransactionId}`;
-
-  const response = await axios.get(url, {
-    headers: { Authorization: `Bearer ${serverToken}` },
-  });
-
-  return response.data;
+  try {
+    const url = `${baseUrl}/inApps/v1/subscriptions/${transactionId}`;
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${serverToken}` },
+      timeout: 10000,
+    });
+    return response.data;
+  } catch (err: any) {
+    // If subscriptions endpoint 404s, try transactions endpoint
+    const txUrl = `${baseUrl}/inApps/v1/transactions/${transactionId}`;
+    const txResponse = await axios.get(txUrl, {
+      headers: { Authorization: `Bearer ${serverToken}` },
+      timeout: 10000,
+    });
+    return txResponse.data;
+  }
 };

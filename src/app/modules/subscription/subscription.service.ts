@@ -3,7 +3,8 @@ import { NotificationService } from "../notification/notification.service.js";
 import { DeviceAuthService } from "../auth/device-auth.service.js";
 import { 
   verifyGoogleSubscription as googleVerifier, 
-  verifyAppleSubscription as appleVerifier 
+  verifyAppleSubscription as appleVerifier,
+  AppleVerificationPayload
 } from "../../../helpers/purchaseVerification.js";
 import jwt from "jsonwebtoken";
 
@@ -308,11 +309,14 @@ const handleGoogleWebhook = async (pubSubMessage: any) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // APPLE APP STORE SUBSCRIPTION VERIFICATION & WEBHOOKS
 // ─────────────────────────────────────────────────────────────────────────────
-const verifyAppleSubscription = async (deviceId: string, signedTransactionInfo: string) => {
-  console.log(`[AppleVerify] Request received: deviceId=${deviceId}`);
+const verifyAppleSubscription = async (
+  deviceId: string,
+  payload: string | AppleVerificationPayload
+) => {
+  console.log(`[AppleVerify] Request received for deviceId=${deviceId}`);
 
-  // 1. Verify JWS transaction payload with Apple Connect Server status check
-  const verification = await appleVerifier(signedTransactionInfo);
+  // 1. Verify Apple receipt/JWS payload or query App Store Server API
+  const verification = await appleVerifier(payload);
   if (!verification.success) {
     throw new Error("Apple App Store subscription verification failed or has expired");
   }
@@ -446,38 +450,6 @@ const handleAppleWebhook = async (signedPayload: string) => {
   }
 };
 
-const getPlans = async () => {
-  return [
-    {
-      id: "weekly",
-      name: "1 Week",
-      description: "Weekly Premium Access",
-      price: 4.99,
-      currency: "USD",
-      duration: "WEEKLY",
-      productId: "com.whichwin.horseracing.weekly",
-    },
-    {
-      id: "monthly",
-      name: "1 Month",
-      description: "Monthly Premium Access",
-      price: 11.99,
-      currency: "USD",
-      duration: "MONTHLY",
-      productId: "com.whichwin.horseracing.monthly",
-    },
-    {
-      id: "yearly",
-      name: "1 Year",
-      description: "Yearly Premium Access",
-      price: 59.99,
-      currency: "USD",
-      duration: "YEARLY",
-      productId: "com.whichwin.horseracing.yearly",
-    },
-  ];
-};
-
 export const SubscriptionService = {
   createSubscription,
   getSubscriptionByUserId,
@@ -486,5 +458,4 @@ export const SubscriptionService = {
   verifyAppleSubscription,
   handleGoogleWebhook,
   handleAppleWebhook,
-  getPlans,
 };
