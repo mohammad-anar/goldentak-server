@@ -1,12 +1,11 @@
 import app from "./app.js";
 import config from "./config/index.js";
-import { seedSuperAdmin } from "./db/seedSuperAdmin.js";
+import { autoSeedDatabase } from "./db/autoSeed.js";
 import { initSubscriptionCron } from "./app/cron/subscriptionCron.js";
 import { initRaceCron } from "./app/cron/raceCron.js";
 import { initSocket } from "./helpers/socketHelper.js";
 import { initFirebase } from "./helpers/firebaseHelper.js";
 import { startWorkers, stopWorkers } from "./workers/worker.bootstrap.js";
-import { AlgorithmSettingsService } from "./algorithm/algorithm-settings.service.js";
 
 let server: any;
 
@@ -36,8 +35,7 @@ process.on("uncaughtException", (error) => {
 
 async function bootstrap() {
   try {
-    await seedSuperAdmin();
-    await AlgorithmSettingsService.seedDefaults(); // Seed algorithm weights if not present
+    await autoSeedDatabase();
 
     // Start BullMQ workers (wrapped safely)
     startWorkers();

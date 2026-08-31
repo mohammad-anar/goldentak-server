@@ -1,16 +1,21 @@
 services:
   postgres:
-    image: postgres:17
+    image: postgres:17-alpine
     container_name: goldentak_postgres
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: goldentak_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+      POSTGRES_DB: ${POSTGRES_DB:-goldentak_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-goldentak_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -20,9 +25,16 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: goldentak_app
     restart: always
     ports:
@@ -30,15 +42,42 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=5001
-      - DATABASE_URL=postgresql://postgres:123456@postgres:5432/goldentak_db?schema=public
-      - DIRECT_URL=postgresql://postgres:123456@postgres:5432/goldentak_db?schema=public
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123456}@postgres:5432/${POSTGRES_DB:-goldentak_db}?schema=public
+      - DIRECT_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123456}@postgres:5432/${POSTGRES_DB:-goldentak_db}?schema=public
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=your_jwt_secret_key_here
-      - RACING_API_KEY=i89tdOwRYpbeFapUiduvyQ1C
-      - RACING_API_SECRET=SftrRFyNKbvugc7XcY0mCmxM
+      - JWT_SECRET=${JWT_SECRET:-eerhbir6b6yrr54t5454t68o54t86ik4t5ir5dfgfdsgdfgdf}
+      - JWT_EXPIRE_IN=${JWT_EXPIRE_IN:-7d}
+      - JWT_REFRESH_EXPIRE_IN=${JWT_REFRESH_EXPIRE_IN:-30d}
+      - BCRYPT_SALT_ROUND=${BCRYPT_SALT_ROUND:-10}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:5001}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - RACING_API_KEY=${RACING_API_KEY:-i89tdOwRYpbeFapUiduvyQ1C}
+      - RACING_API_SECRET=${RACING_API_SECRET:-SftrRFyNKbvugc7XcY0mCmxM}
+      - NAME=${NAME:-Admin}
+      - EMAIL=${EMAIL:-admin@gmail.com}
+      - PHONE=${PHONE:-0000000000}
+      - PASSWORD=${PASSWORD:-12345678}
+      - AVATAR=${AVATAR:-https://i.ibb.co/VWkMFBWM/pngtree-user-icon-png-image-1796659.jpg}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - EMAIL_PASS=${EMAIL_PASS}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
+      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}
+      - GOOGLE_PLAY_CLIENT_EMAIL=${GOOGLE_PLAY_CLIENT_EMAIL}
+      - GOOGLE_PLAY_PRIVATE_KEY=${GOOGLE_PLAY_PRIVATE_KEY}
+      - APPLE_KEY_ID=${APPLE_KEY_ID}
+      - APPLE_ISSUER_ID=${APPLE_ISSUER_ID}
+      - APPLE_PRIVATE_KEY=${APPLE_PRIVATE_KEY}
+      - APPLE_BUNDLE_ID=${APPLE_BUNDLE_ID}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:
