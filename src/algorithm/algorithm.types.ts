@@ -13,10 +13,12 @@ export interface AlgorithmWeights {
   WEIGHT_EARNING:  number; // default 5
   WEIGHT_WEIGHT:   number; // default 10
 
-  // Category thresholds (percentage of top raw score)
+  // Category thresholds (score difference from top raw score)
+  THRESH_MINIMUM:  number; // default 10
   THRESH_SMALL:    number; // default 20
-  THRESH_MEDIUM:   number; // default 50
-  THRESH_BIG:      number; // default 57
+  THRESH_MEDIUM:   number; // default 35
+  THRESH_LARGE:    number; // default 50
+  THRESH_MEGA:     number; // default 70
 }
 
 export const DEFAULT_WEIGHTS: AlgorithmWeights = {
@@ -28,9 +30,11 @@ export const DEFAULT_WEIGHTS: AlgorithmWeights = {
   WEIGHT_PEDIGREE: 5,
   WEIGHT_EARNING:  5,
   WEIGHT_WEIGHT:   10,
+  THRESH_MINIMUM:  10,
   THRESH_SMALL:    20,
-  THRESH_MEDIUM:   50,
-  THRESH_BIG:      57,
+  THRESH_MEDIUM:   35,
+  THRESH_LARGE:    50,
+  THRESH_MEGA:     70,
 };
 
 // ─── Entry context passed to every calculator ─────────────────────────────────
@@ -144,7 +148,7 @@ export interface RankedRunner {
   entryId: string;
   horseName: string;
   rank: number;
-  category: "SMALL" | "MEDIUM" | "BIG" | "X";
+  category: "MINIMUM" | "SMALL" | "MEDIUM" | "LARGE" | "MEGA";
   scores: ScoreBreakdown;
   normalizedScore: number;
 }

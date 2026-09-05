@@ -12,10 +12,11 @@ enum RaceStatus {
 }
 
 enum Category {
+  MINIMUM
   SMALL
   MEDIUM
-  BIG
-  X
+  LARGE
+  MEGA
 }
 
 enum NotificationType {

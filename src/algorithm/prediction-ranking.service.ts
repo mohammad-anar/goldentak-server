@@ -24,14 +24,15 @@ function classifyCategory(
   rawScore: number,
   topRawScore: number,
   weights: AlgorithmWeights
-): "SMALL" | "MEDIUM" | "BIG" | "X" {
-  if (rank > 5) return "X";
+): "MINIMUM" | "SMALL" | "MEDIUM" | "LARGE" | "MEGA" {
+  if (rank === 1) return "MINIMUM";
   const diff = topRawScore - rawScore;
 
+  if (diff <= weights.THRESH_MINIMUM) return "MINIMUM";
   if (diff <= weights.THRESH_SMALL) return "SMALL";
   if (diff <= weights.THRESH_MEDIUM) return "MEDIUM";
-  if (diff <= weights.THRESH_BIG) return "BIG";
-  return "X";
+  if (diff <= weights.THRESH_LARGE) return "LARGE";
+  return "MEGA";
 }
 
 export class PredictionRankingService {
@@ -259,17 +260,22 @@ export class PredictionRankingService {
       runnerScores.sort((a, b) => b.rawScore - a.rawScore);
       const topScore = runnerScores[0]?.rawScore ?? 0;
 
-      // Normalise raw scores to 0-100 scale for user-friendly UI display
-      const minScore = runnerScores[runnerScores.length - 1]?.rawScore ?? 0;
-      const scoreRange = topScore - minScore || 1;
-
       const ranked: RankedRunner[] = [];
 
       for (let i = 0; i < runnerScores.length; i++) {
         const { entryId, horseName, scores, rawScore } = runnerScores[i];
         const rank     = i + 1;
         const category = classifyCategory(rank, rawScore, topScore, weights);
-        const normalizedScore = ((rawScore - minScore) / scoreRange) * 100;
+        
+        // Single 100% benchmark: Rank 1 strictly receives 100%. All others scale proportionally downwards.
+        // Guarantee no second horse ever receives 100%.
+        let normalizedScore = 0.0;
+        if (rank === 1) {
+          normalizedScore = 100.0;
+        } else if (topScore > 0) {
+          const proportional = (rawScore / topScore) * 100.0;
+          normalizedScore = Number(Math.min(99.0, Math.max(0.0, proportional)).toFixed(1));
+        }
 
         // Persist final values to race_entries
         await prisma.raceEntry.update({
