@@ -148,7 +148,7 @@ export interface RankedRunner {
   entryId: string;
   horseName: string;
   rank: number;
-  category: "MINIMUM" | "SMALL" | "MEDIUM" | "LARGE" | "MEGA";
+  category: "MINIMUM" | "SMALL" | "MEDIUM" | "LARGE" | "MEGA" | null;
   scores: ScoreBreakdown;
   normalizedScore: number;
 }

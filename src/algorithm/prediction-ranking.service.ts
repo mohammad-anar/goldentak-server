@@ -21,18 +21,17 @@ import { NotificationType } from "@prisma/client";
 
 function classifyCategory(
   rank: number,
-  rawScore: number,
-  topRawScore: number,
-  weights: AlgorithmWeights
-): "MINIMUM" | "SMALL" | "MEDIUM" | "LARGE" | "MEGA" {
-  if (rank === 1) return "MINIMUM";
-  const diff = topRawScore - rawScore;
+  normalizedScore: number
+): "MINIMUM" | "SMALL" | "MEDIUM" | "LARGE" | "MEGA" | null {
+  // Max 6 horses total in prediction tiers, and minimum 60% floor cutoff
+  if (rank > 6 || normalizedScore < 60.0) return null;
 
-  if (diff <= weights.THRESH_MINIMUM) return "MINIMUM";
-  if (diff <= weights.THRESH_SMALL) return "SMALL";
-  if (diff <= weights.THRESH_MEDIUM) return "MEDIUM";
-  if (diff <= weights.THRESH_LARGE) return "LARGE";
-  return "MEGA";
+  if (normalizedScore >= 95.0) return "MINIMUM";
+  if (normalizedScore >= 90.0) return "SMALL";
+  if (normalizedScore >= 80.0) return "MEDIUM";
+  if (normalizedScore >= 70.0) return "LARGE";
+  if (normalizedScore >= 60.0) return "MEGA";
+  return null;
 }
 
 export class PredictionRankingService {
@@ -264,8 +263,7 @@ export class PredictionRankingService {
 
       for (let i = 0; i < runnerScores.length; i++) {
         const { entryId, horseName, scores, rawScore } = runnerScores[i];
-        const rank     = i + 1;
-        const category = classifyCategory(rank, rawScore, topScore, weights);
+        const rank = i + 1;
         
         // Single 100% benchmark: Rank 1 strictly receives 100%. All others scale proportionally downwards.
         // Guarantee no second horse ever receives 100%.
@@ -276,6 +274,8 @@ export class PredictionRankingService {
           const proportional = (rawScore / topScore) * 100.0;
           normalizedScore = Number(Math.min(99.0, Math.max(0.0, proportional)).toFixed(1));
         }
+
+        const category = classifyCategory(rank, normalizedScore);
 
         // Persist final values to race_entries
         await prisma.raceEntry.update({
@@ -342,13 +342,14 @@ export class PredictionRankingService {
         }
       }
 
-      // Collect all top picks in the SMALL category
+      // Collect top picks (MINIMUM & SMALL tiers) up to top 6
       const topCats = runnerScores
-        .filter((r) => topScore - r.rawScore <= weights.THRESH_SMALL)
+        .filter((r) => topScore > 0 && ((r.rawScore / topScore) * 100) >= 90.0)
+        .slice(0, 6)
         .map((r) => r.horseName);
 
       const predictionMessage = topResult
-        ? `${topCats.join(" & ")} ${topCats.length > 1 ? "are" : "is"} the top pick${topCats.length > 1 ? "s" : ""} (score: ${topResult.rawScore.toFixed(2)}).`
+        ? `${topCats.length > 0 ? topCats.join(" & ") : topResult.horseName} ${topCats.length > 1 ? "are" : "is"} the top pick${topCats.length > 1 ? "s" : ""} (score: ${topResult.rawScore.toFixed(2)}).`
         : "No prediction available.";
 
       await prisma.race.update({
