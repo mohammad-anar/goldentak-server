@@ -5,7 +5,7 @@ import { Secret } from "jsonwebtoken";
 import { NotificationService } from "../notification/notification.service.js";
 
 // ── FREE TRIAL DURATION ───────────────────────────────────────────────────────
-const FREE_TRIAL_DAYS = 3;
+const FREE_TRIAL_DAYS = 7;
 
 const deviceLogin = async (deviceId: string) => {
   // 1. Find or Create User
@@ -45,7 +45,7 @@ const deviceLogin = async (deviceId: string) => {
       (err) => console.error("[DeviceAuth] Failed to send trial notification:", err)
     );
 
-    console.log(`[DeviceAuth] 3-day free trial granted to new user: ${user.id} (expires: ${trialEnd.toISOString()})`);
+    console.log(`[DeviceAuth] 7-day free trial granted to new user: ${user.id} (expires: ${trialEnd.toISOString()})`);
   }
 
   // 3. Prepare Subscription Info

@@ -500,15 +500,15 @@ const createTrialNotification = async (userId: string, trialEndDate: string) => 
 
     const templates: Record<string, { title: string; message: string }> = {
       en: {
-        title: "🎉 Welcome! Your 3-Day Free Trial Has Started",
+        title: "🎉 Welcome! Your 7-Day Free Trial Has Started",
         message: `You now have full access to all premium AI predictions for free until ${trialEndDate}. Enjoy the full experience — subscribe to continue after your trial ends!`,
       },
       tr: {
-        title: "🎉 Hoş Geldiniz! 3 Günlük Ücretsiz Denemeniz Başladı",
+        title: "🎉 Hoş Geldiniz! 7 Günlük Ücretsiz Denemeniz Başladı",
         message: `${trialEndDate} tarihine kadar tüm premium yapay zeka tahminlerine ücretsiz erişiminiz var. Deneme süreniz sona erdikten sonra devam etmek için abone olun!`,
       },
       ar: {
-        title: "🎉 مرحباً! بدأت تجربتك المجانية لمدة 3 أيام",
+        title: "🎉 مرحباً! بدأت تجربتك المجانية لمدة 7 أيام",
         message: `أنت الآن تتمتع بالوصول الكامل لجميع توقعات الذكاء الاصطناعي المميزة مجاناً حتى ${trialEndDate}. استمتع بالتجربة الكاملة — اشترك للاستمرار بعد انتهاء فترة تجربتك!`,
       },
     };
