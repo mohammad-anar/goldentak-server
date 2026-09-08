@@ -15,7 +15,9 @@ const createOrUpdate = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getByType = catchAsync(async (req: Request, res: Response) => {
-  const result = await LegalService.getByType(req.params.type as string);
+  const langHeader = (req.headers['accept-language'] || req.headers['x-app-language'] || req.query.lang || 'en') as string;
+  const lang = langHeader.toLowerCase().startsWith('tr') ? 'tr' : 'en';
+  const result = await LegalService.getByType(req.params.type as string, lang);
   sendResponse(res, {
     success: true,
     statusCode: 200,

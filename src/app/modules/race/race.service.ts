@@ -7,9 +7,9 @@ import { Queues, JOB_NAMES } from "../../../queues/queue.registry.js";
 // ─────────────────────────────────────────────────────────────────────────────
 // RaceService
 //
-// Reads from Redis cache → PostgreSQL.
-// NEVER calls The Racing API.
-// NEVER calls SyncService or CalculationService.
+// Reads from Redis cache -> PostgreSQL.
+// NEVER calls The Racing API directly on client requests.
+// Uses strict Prisma select projections to keep payloads minimal and fast.
 // Dispatches BullMQ jobs for background revalidation (SWR pattern).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,33 @@ const getAllRaces = async (filters: any) => {
       where,
       skip,
       take: limit,
-      include: { _count: { select: { entries: true } } },
+      select: {
+        id: true,
+        externalId: true,
+        name: true,
+        date: true,
+        time: true,
+        location: true,
+        country: true,
+        region: true,
+        surface: true,
+        trackType: true,
+        raceType: true,
+        distance: true,
+        prize: true,
+        status: true,
+        tahmin1X: true,
+        riskRate: true,
+        predictionMessage: true,
+        hasPredictions: true,
+        fieldSize: true,
+        ageBand: true,
+        _count: {
+          select: {
+            entries: true,
+          },
+        },
+      },
       orderBy: { [sortBy || "date"]: sortOrder || "asc" },
     }),
     prisma.race.count({ where }),
@@ -96,9 +122,64 @@ const getRaceById = async (id: string) => {
 
   const result = await prisma.race.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true,
+      externalId: true,
+      name: true,
+      date: true,
+      time: true,
+      location: true,
+      country: true,
+      region: true,
+      surface: true,
+      trackType: true,
+      raceType: true,
+      distance: true,
+      prize: true,
+      status: true,
+      tahmin1X: true,
+      riskRate: true,
+      predictionMessage: true,
+      hasPredictions: true,
+      fieldSize: true,
+      ageBand: true,
       entries: {
-        include: {
+        select: {
+          id: true,
+          raceId: true,
+          horseId: true,
+          jockeyId: true,
+          number: true,
+          draw: true,
+          weight: true,
+          form: true,
+          headgear: true,
+          lastRun: true,
+          or: true,
+          ofr: true,
+          rpr: true,
+          horsePower: true,
+          jockeyPower: true,
+          pedigreePower: true,
+          sirePower: true,
+          damPower: true,
+          damSirePower: true,
+          rawScore: true,
+          normalizedScore: true,
+          rank: true,
+          category: true,
+          winProb: true,
+          winOddsFair: true,
+          placeProb: true,
+          eachWayProb: true,
+          earningScore: true,
+          weightScore: true,
+          aiSelectionRank: true,
+          aiConfidence: true,
+          aiConfidenceScore: true,
+          aiAnalysis: true,
+          hasValueEdge: true,
+          valueEdgePercent: true,
           horse: {
             select: {
               id: true,
@@ -114,8 +195,6 @@ const getRaceById = async (id: string) => {
               trainer: true,
               country: true,
               totalEarnings: true,
-              bestTime: true,
-              bestTimeLocation: true,
               totalRaces: true,
               wins: true,
               seconds: true,
@@ -151,7 +230,15 @@ const getRaceById = async (id: string) => {
         orderBy: [{ rank: "asc" }, { normalizedScore: "desc" }],
       },
       results: {
-        include: {
+        select: {
+          id: true,
+          position: true,
+          time: true,
+          btn: true,
+          ovrBtn: true,
+          or: true,
+          rpr: true,
+          earnings: true,
           horse: {
             select: {
               id: true,
@@ -168,20 +255,28 @@ const getRaceById = async (id: string) => {
             },
           },
         },
+        orderBy: { position: "asc" },
       },
     },
   });
 
   if (result) {
-    await CacheService.set(cacheKey, result, TTL.RACE_DETAIL);
+    const formattedResult = result as any;
+    if (formattedResult.status !== "FINISHED" && (!formattedResult.results || formattedResult.results.length === 0)) {
+      formattedResult.results = [];
+    }
+
+    await CacheService.set(cacheKey, formattedResult, TTL.RACE_DETAIL);
 
     // SWR: if race has no scored entries, dispatch prediction job
-    const hasScores = result.entries.some((e) => e.normalizedScore !== null);
-    if (!hasScores && result.entries.length > 0) {
+    const hasScores = formattedResult.entries?.some((e: any) => e.normalizedScore !== null);
+    if (!hasScores && formattedResult.entries?.length > 0) {
       Queues.prediction
         .add(JOB_NAMES.CALCULATE_RACE, { raceId: id }, { priority: 1 })
         .catch((err) => console.error("[RaceService] Failed to enqueue prediction:", err.message));
     }
+
+    return formattedResult;
   }
 
   return result;
@@ -257,7 +352,7 @@ const getRaceStatistics = async (id: string) => {
       const distanceWins: Record<string, number> = { "1200m": 0, "1600m": 0, "2000m": 0 };
       entries.forEach((e) => {
         e.horse.results.forEach((r) => {
-          if (r.position === 1 && r.race.distance) {
+          if (r.position === 1 && r.race?.distance) {
             const dist = r.race.distance.toLowerCase();
             if (dist.includes("1200"))     distanceWins["1200m"]++;
             else if (dist.includes("1600")) distanceWins["1600m"]++;
@@ -276,7 +371,7 @@ const getRaceStatistics = async (id: string) => {
       let turfWins = 0, turfRuns = 0, sandWins = 0, sandRuns = 0;
       entries.forEach((e) => {
         e.horse.results.forEach((r) => {
-          const surface = r.race.trackType?.toLowerCase() ?? "";
+          const surface = r.race?.trackType?.toLowerCase() ?? r.race?.surface?.toLowerCase() ?? "";
           if (surface.includes("turf")) { turfRuns++; if (r.position === 1) turfWins++; }
           else if (surface.includes("sand")) { sandRuns++; if (r.position === 1) sandWins++; }
         });

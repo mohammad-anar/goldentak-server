@@ -1,5 +1,6 @@
 import cors from "cors";
 import express, { Application, Request, Response } from "express";
+import compression from "compression";
 import swaggerUi from "swagger-ui-express";
 import config from "./config/index.js";
 import { swaggerSpec } from "./config/swagger.js";
@@ -9,6 +10,9 @@ import globalErrorHandler from "./app/middlewares/globalErrorHandler.js";
 import notFound from "./app/middlewares/notFound.js";
 
 const app: Application = express();
+
+// Enable Gzip / Deflate HTTP response compression for ~80% smaller payloads
+app.use(compression());
 
 // Simple request logger for debugging (dev only)
 if (config.node_env === "development") {
@@ -49,7 +53,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/uploads", express.static("uploads"));
 
-// ─── Swagger UI ───────────────────────────────────────────────────────────────
+// Swagger UI
 if (config.node_env === "development") {
   app.use(
     "/api-docs",
@@ -67,16 +71,16 @@ if (config.node_env === "development") {
   });
 }
 
-// ─── Rate Limiting (sliding window, 100 req/min per IP) ─────────────────────
+// Rate Limiting (sliding window, 100 req/min per IP)
 app.use(rateLimiter);
 
-// ─── API Routes ───────────────────────────────────────────────────────────────
+// API Routes
 app.use("/api/v1", router);
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
+// Health Check
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    message: "Which Win API is running 🏇",
+    message: "Which Win API is running",
     docs: "/api-docs",
     environment: config.node_env,
     uptime: process.uptime().toFixed(2) + "s",
