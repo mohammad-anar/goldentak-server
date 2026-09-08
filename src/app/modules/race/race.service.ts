@@ -92,7 +92,7 @@ const getAllRaces = async (filters: any) => {
           },
         },
       },
-      orderBy: { [sortBy || "date"]: sortOrder || "asc" },
+      orderBy: sortBy ? { [sortBy]: sortOrder || "asc" } : [{ date: "asc" }, { time: "asc" }],
     }),
     prisma.race.count({ where }),
   ]);
