@@ -70,12 +70,60 @@ const notifyAdmins = async (payload: {
   return notifications;
 };
 
-const getMyNotifications = async (userId: string) => {
+const getMyNotifications = async (userId: string, lang: string = "en") => {
+  const normalizedLang = lang.toLowerCase().startsWith("tr") ? "tr" : "en";
   const result = await prisma.notification.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
+
+  if (normalizedLang === "tr") {
+    return result.map((n) => {
+      let title = n.title;
+      let message = n.message;
+
+      // Localize Welcome / Free Trial
+      if (
+        n.type === NotificationType.SYSTEM &&
+        (title.includes("Welcome") || title.includes("Free Trial") || title.includes("Hoş Geldiniz"))
+      ) {
+        title = "🎉 Hoş Geldiniz! 7 Günlük Ücretsiz Denemeniz Başladı";
+        if (message.includes("free until") || message.includes("Free Trial") || message.includes("ücretsiz")) {
+          const dateMatch = message.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+          const dateStr = dateMatch ? dateMatch[0] : "deneme süreniz boyunca";
+          message = `${dateStr} tarihine kadar tüm premium yapay zeka tahminlerine ücretsiz erişiminiz var. Deneme süreniz sona erdikten sonra devam etmek için abone olun!`;
+        }
+      }
+
+      // Localize Subscription notifications
+      if (n.type === NotificationType.SUBSCRIPTION_EXPIRING) {
+        if (title.toLowerCase().includes("activated") || title.toLowerCase().includes("aktif")) {
+          title = "Abonelik Aktif Edildi";
+        } else if (title.toLowerCase().includes("expiring") || title.toLowerCase().includes("sona eriyor")) {
+          title = "Aboneliğiniz Yakında Sona Eriyor";
+        } else if (title.toLowerCase().includes("expired") || title.toLowerCase().includes("süresi doldu")) {
+          title = "Abonelik Süresi Doldu";
+        }
+      }
+
+      // Localize Race Notifications
+      if (title.toLowerCase().includes("race starting") || title.toLowerCase().includes("yarış başlıyor")) {
+        title = "Yarış Başlıyor";
+      } else if (title.toLowerCase().includes("race finished") || title.toLowerCase().includes("yarış tamamlandı")) {
+        title = "Yarış Tamamlandı";
+      } else if (title.toLowerCase().includes("predictions ready") || title.toLowerCase().includes("tahminler hazır")) {
+        title = "Tahminler Hazır";
+      }
+
+      return {
+        ...n,
+        title,
+        message,
+      };
+    });
+  }
+
   return result;
 };
 
@@ -94,71 +142,50 @@ const markAllAsRead = async (userId: string) => {
 };
 
 const registerDeviceToken = async (userId: string, fcmToken: string, platform?: string) => {
-  return await prisma.user.update({
+  const result = await prisma.user.update({
     where: { id: userId },
     data: {
       fcmToken,
-      platform: platform?.toLowerCase(),
+      ...(platform ? { platform } : {}),
+    },
+    select: {
+      id: true,
+      email: true,
+      fcmToken: true,
+      platform: true,
     },
   });
+  return result;
 };
 
 const sendCustomNotification = async (payload: {
   title: string;
   message: string;
-  recipientType: string;
+  targetRole?: string;
+  targetUserId?: string;
 }) => {
-  const { title, message, recipientType } = payload;
+  const { title, message, targetRole, targetUserId } = payload;
 
-  // 1. Create Broadcast log
-  const broadcast = await prisma.broadcastNotification.create({
-    data: {
+  if (targetUserId) {
+    return await createNotification({
+      userId: targetUserId,
+      type: NotificationType.SYSTEM,
       title,
       message,
-      recipient: recipientType,
-    },
-  });
-
-  // 2. Fetch users based on target group
-  const whereConditions: any = {
-    role: "USER",
-    deviceId: { not: null },
-  };
-
-  if (recipientType === "paid") {
-    whereConditions.subscription = {
-      isActive: true,
-      endDate: { gte: new Date() },
-    };
-  }
-
-  let users = await prisma.user.findMany({
-    where: whereConditions,
-    select: { id: true, deviceId: true, fcmToken: true, platform: true },
-  });
-
-  // Filter iOS / Android if needed
-  if (recipientType === "ios" || recipientType === "android") {
-    users = users.filter((u) => {
-      const platform = u.platform?.toLowerCase();
-      if (platform === recipientType) return true;
-      if (!platform) {
-        // Fallback to deterministic hash check
-        const idStr = u.deviceId || u.id;
-        let hash = 0;
-        for (let i = 0; i < idStr.length; i++) {
-          hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const isIos = Math.abs(hash) % 100 < 54;
-        return recipientType === "ios" ? isIos : !isIos;
-      }
-      return false;
     });
   }
 
-  // 3. Send notifications (DB, Socket, Firebase)
+  const whereClause: any = {};
+  if (targetRole && targetRole !== "ALL") {
+    whereClause.role = targetRole;
+  }
+
+  const users = await prisma.user.findMany({
+    where: whereClause,
+    select: { id: true, fcmToken: true },
+  });
+
   if (users.length > 0) {
-    // Create DB notifications for all target users
     await prisma.notification.createMany({
       data: users.map((u) => ({
         userId: u.id,
@@ -168,7 +195,6 @@ const sendCustomNotification = async (payload: {
       })),
     });
 
-    // Fetch created notifications to get IDs for Socket.io emit
     const createdNotifs = await prisma.notification.findMany({
       where: {
         userId: { in: users.map((u) => u.id) },
@@ -183,31 +209,38 @@ const sendCustomNotification = async (payload: {
       try {
         emitNotification(notif.userId, notif);
       } catch (err) {
-        console.error("Socket emit failed for notification:", notif.id, err);
+        console.error(`Socket emit failed for user ${notif.userId}:`, err);
       }
     });
 
-    // Send push notification via Firebase Admin FCM
-    const fcmTokens = users.map((u) => u.fcmToken).filter((t): t is string => !!t);
+    // Send push notification in batch
+    const fcmTokens = users.map((u) => u.fcmToken).filter(Boolean) as string[];
     if (fcmTokens.length > 0) {
       try {
         await sendMulticastPushNotification(fcmTokens, {
           title,
           body: message,
+          data: { type: NotificationType.SYSTEM },
         });
       } catch (err) {
-        console.error("Firebase multicast send failed:", err);
+        console.error("FCM multicast failed:", err);
       }
     }
   }
 
-  return broadcast;
+  return { sentCount: users.length };
 };
 
 const getBroadcastNotifications = async () => {
-  return await prisma.broadcastNotification.findMany({
+  const result = await prisma.notification.findMany({
+    where: {
+      type: NotificationType.SYSTEM,
+    },
     orderBy: { createdAt: "desc" },
+    distinct: ["title", "message"],
+    take: 20,
   });
+  return result;
 };
 
 const getNotificationStats = async () => {
@@ -215,14 +248,14 @@ const getNotificationStats = async () => {
     where: { type: NotificationType.SYSTEM },
   });
 
-  const deliveredCount = Math.round(totalSent * 0.98); // 98% delivery rate
-  const openedCount = Math.round(totalSent * 0.68); // 68% open rate
+  const deliveredCount = Math.round(totalSent * 0.98);
+  const openedCount = Math.round(totalSent * 0.68);
   const clickRate = totalSent > 0 ? "68%" : "0%";
 
   return {
-    totalSent: totalSent.toLocaleString(),
-    delivered: deliveredCount.toLocaleString(),
-    opened: openedCount.toLocaleString(),
+    totalSent,
+    deliveredCount,
+    openedCount,
     clickRate,
   };
 };
@@ -235,33 +268,9 @@ const sendRaceNotification = async (raceId: string, type: NotificationType) => {
       return;
     }
 
-    const raceName = race.name || "Race";
-    const location = race.location || "Unknown Course";
+    const raceName = race.name || "Horse Race";
+    const location = race.location || "";
 
-    // Group users by language
-    const users = await prisma.user.findMany({
-      where: { role: "USER" },
-      select: { id: true, fcmToken: true, language: true },
-    });
-
-    if (users.length === 0) return;
-
-    const groups: Record<string, typeof users> = {
-      en: [],
-      tr: [],
-      ar: [],
-    };
-
-    for (const user of users) {
-      const lang = (user.language || "en").toLowerCase();
-      if (groups[lang]) {
-        groups[lang].push(user);
-      } else {
-        groups["en"].push(user);
-      }
-    }
-
-    // Translation templates
     const templates: Record<string, Record<string, { title: string; message: string }>> = {
       en: {
         PREDICTION_READY: {
@@ -269,46 +278,55 @@ const sendRaceNotification = async (raceId: string, type: NotificationType) => {
           message: `AI predictions for ${raceName} at ${location} are now available!`,
         },
         RACE_STARTING: {
-          title: "Race Starting",
-          message: `${raceName} at ${location} is starting now!`,
+          title: "Race Starting Soon",
+          message: `${raceName} at ${location} is about to start. Follow live updates!`,
         },
         RACE_FINISHED: {
           title: "Race Finished",
-          message: `${raceName} at ${location} has ended. View the results!`,
+          message: `Results for ${raceName} at ${location} are now in. Check the winner!`,
         },
       },
       tr: {
         PREDICTION_READY: {
           title: "Tahminler Hazır",
-          message: `${location} pistindeki ${raceName} yarışı için yapay zeka tahminleri hazır!`,
+          message: `${raceName} (${location}) için yapay zeka tahminleri hazır!`,
         },
         RACE_STARTING: {
           title: "Yarış Başlıyor",
-          message: `${location} pistindeki ${raceName} yarışı şimdi başlıyor!`,
+          message: `${raceName} (${location}) koşusu başlamak üzere! Canlı takip edin.`,
         },
         RACE_FINISHED: {
-          title: "Yarış Bitti",
-          message: `${location} pistindeki ${raceName} yarışı sonuçlandı. Sonuçları görün!`,
-        },
-      },
-      ar: {
-        PREDICTION_READY: {
-          title: "التوقعات جاهزة",
-          message: `توقعات الذكاء الاصطناعي لسباق ${raceName} في ${location} جاهزة الآن!`,
-        },
-        RACE_STARTING: {
-          title: "بدء السباق",
-          message: `سباق ${raceName} في ${location} يبدأ الآن!`,
-        },
-        RACE_FINISHED: {
-          title: "انتهى السباق",
-          message: `انتهى سباق ${raceName} في ${location}. شاهد النتائج!`,
+          title: "Yarış Tamamlandı",
+          message: `${raceName} (${location}) sonuçları açıklandı. Sonuçları hemen görüntüleyin.`,
         },
       },
     };
 
-    for (const lang of ["en", "tr", "ar"]) {
-      const langUsers = groups[lang];
+    const users = await prisma.user.findMany({
+      where: {
+        role: "USER",
+      },
+      select: {
+        id: true,
+        fcmToken: true,
+        language: true,
+      },
+    });
+
+    if (!users || users.length === 0) return;
+
+    const usersByLang: Record<string, typeof users> = {
+      en: [],
+      tr: [],
+    };
+
+    for (const u of users) {
+      const lang = (u.language || "en").toLowerCase().startsWith("tr") ? "tr" : "en";
+      usersByLang[lang].push(u);
+    }
+
+    for (const lang of ["en", "tr"]) {
+      const langUsers = usersByLang[lang];
       if (!langUsers || langUsers.length === 0) continue;
 
       const template = templates[lang][type.toString()];
@@ -316,7 +334,6 @@ const sendRaceNotification = async (raceId: string, type: NotificationType) => {
 
       const { title, message } = template;
 
-      // 1. Create DB notifications in bulk
       await prisma.notification.createMany({
         data: langUsers.map((u) => ({
           userId: u.id,
@@ -326,29 +343,7 @@ const sendRaceNotification = async (raceId: string, type: NotificationType) => {
         })),
       });
 
-      // 2. Fetch the created notifications to get their IDs for socket.io emit
-      const createdNotifs = await prisma.notification.findMany({
-        where: {
-          userId: { in: langUsers.map((u) => u.id) },
-          title,
-          message,
-          type,
-        },
-        orderBy: { createdAt: "desc" },
-        take: langUsers.length,
-      });
-
-      // 3. Emit via socket
-      createdNotifs.forEach((notif) => {
-        try {
-          emitNotification(notif.userId, notif);
-        } catch (err) {
-          console.error(`Socket emit failed for user ${notif.userId}:`, err);
-        }
-      });
-
-      // 4. Send multicast FCM notifications
-      const tokens = langUsers.map((u) => u.fcmToken).filter((t): t is string => !!t);
+      const tokens = langUsers.map((u) => u.fcmToken).filter(Boolean) as string[];
       if (tokens.length > 0) {
         try {
           await sendMulticastPushNotification(tokens, {
@@ -392,7 +387,7 @@ const sendSubscriptionNotification = async (
 
     if (!user) return;
 
-    const lang = (user.language || "en").toLowerCase();
+    const lang = (user.language || "en").toLowerCase().startsWith("tr") ? "tr" : "en";
     const dateString = endDate ? new Date(endDate).toLocaleDateString() : "";
 
     const templates: Record<string, Record<string, { title: string; message: string }>> = {
@@ -424,20 +419,6 @@ const sendSubscriptionNotification = async (
           message: "Aboneliğinizin süresi doldu. Premium yapay zeka tahminlerini açmak için tekrar abone olun!",
         },
       },
-      ar: {
-        ACTIVATED: {
-          title: "تم تفعيل الاشتراك",
-          message: `شكراً لاشتراكك! باقتك المميزة نشطة الآن حتى ${dateString}.`,
-        },
-        EXPIRING: {
-          title: "قرب انتهاء الاشتراك",
-          message: `سينتهي اشتراكك في ${dateString}. جدد الآن للاحتفاظ بالوصول لتوقعات الذكاء الاصطناعي المميزة!`,
-        },
-        EXPIRED: {
-          title: "انتهى الاشتراك",
-          message: "انتهى اشتراكك. اشترك مجدداً لفتح توقعات الذكاء الاصطناعي المميزة!",
-        },
-      },
     };
 
     const currentLangTemplates = templates[lang] || templates["en"];
@@ -446,7 +427,6 @@ const sendSubscriptionNotification = async (
 
     const { title, message } = template;
 
-    // Create notification in database
     const notification = await prisma.notification.create({
       data: {
         userId,
@@ -456,14 +436,12 @@ const sendSubscriptionNotification = async (
       },
     });
 
-    // Emit via Socket.io
     try {
       emitNotification(userId, notification);
     } catch (err) {
       console.error("Socket emit failed for subscription notification:", err);
     }
 
-    // Send push notification via Firebase FCM
     if (user.fcmToken) {
       try {
         await sendPushNotification(user.fcmToken, {
@@ -483,10 +461,6 @@ const sendSubscriptionNotification = async (
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FREE TRIAL WELCOME NOTIFICATION
-// Sent once when a brand-new device user logs in for the first time.
-// ─────────────────────────────────────────────────────────────────────────────
 const createTrialNotification = async (userId: string, trialEndDate: string) => {
   try {
     const user = await prisma.user.findUnique({
@@ -496,7 +470,7 @@ const createTrialNotification = async (userId: string, trialEndDate: string) => 
 
     if (!user) return;
 
-    const lang = (user.language || "en").toLowerCase();
+    const lang = (user.language || "en").toLowerCase().startsWith("tr") ? "tr" : "en";
 
     const templates: Record<string, { title: string; message: string }> = {
       en: {
@@ -507,15 +481,10 @@ const createTrialNotification = async (userId: string, trialEndDate: string) => 
         title: "🎉 Hoş Geldiniz! 7 Günlük Ücretsiz Denemeniz Başladı",
         message: `${trialEndDate} tarihine kadar tüm premium yapay zeka tahminlerine ücretsiz erişiminiz var. Deneme süreniz sona erdikten sonra devam etmek için abone olun!`,
       },
-      ar: {
-        title: "🎉 مرحباً! بدأت تجربتك المجانية لمدة 7 أيام",
-        message: `أنت الآن تتمتع بالوصول الكامل لجميع توقعات الذكاء الاصطناعي المميزة مجاناً حتى ${trialEndDate}. استمتع بالتجربة الكاملة — اشترك للاستمرار بعد انتهاء فترة تجربتك!`,
-      },
     };
 
     const template = templates[lang] || templates["en"];
 
-    // Create DB notification
     const notification = await prisma.notification.create({
       data: {
         userId,
@@ -525,14 +494,12 @@ const createTrialNotification = async (userId: string, trialEndDate: string) => 
       },
     });
 
-    // Emit via Socket.io
     try {
       emitNotification(userId, notification);
     } catch (err) {
       console.error("Socket emit failed for trial notification:", err);
     }
 
-    // Send push notification
     if (user.fcmToken) {
       try {
         await sendPushNotification(user.fcmToken, {
@@ -563,4 +530,3 @@ export const NotificationService = {
   sendSubscriptionNotification,
   createTrialNotification,
 };
-

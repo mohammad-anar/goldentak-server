@@ -6,7 +6,9 @@ import catchAsync from "../../shared/catchAsync.js";
 
 const getMyNotifications = catchAsync(async (req: Request, res: Response) => {
   const userId = (req.user as any).userId;
-  const result = await NotificationService.getMyNotifications(userId);
+  const langHeader = (req.headers['accept-language'] || req.headers['x-app-language'] || req.query.lang || 'en') as string;
+  const lang = langHeader.toLowerCase().startsWith('tr') ? 'tr' : 'en';
+  const result = await NotificationService.getMyNotifications(userId, lang);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

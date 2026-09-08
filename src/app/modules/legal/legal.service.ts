@@ -1,38 +1,7 @@
 import { prisma } from '../../../helpers/prisma.js';
 import ApiError from '../../../errors/ApiError.js';
 
-const createOrUpdate = async (type: string, content: string) => {
-  const result = await prisma.legalDocument.upsert({
-    where: { type },
-    update: { content },
-    create: { type, content },
-  });
-  return result;
-};
-
-const getByType = async (type: string, lang: string = 'en') => {
-  const upperType = type.toUpperCase();
-  const isTerms = upperType.includes('TERM');
-  const isPrivacy = upperType.includes('PRIVACY');
-  const isAbout = upperType.includes('ABOUT');
-
-  const baseType = isTerms ? 'TERMS_AND_CONDITIONS' : isPrivacy ? 'PRIVACY_POLICY' : isAbout ? 'ABOUT_US' : upperType;
-  const localizedKey = `${baseType}_${lang.toUpperCase()}`;
-
-  let result = await prisma.legalDocument.findFirst({
-    where: {
-      OR: [
-        { type: localizedKey },
-        { type: baseType },
-      ]
-    },
-    orderBy: { updatedAt: 'desc' }
-  });
-
-  if (!result) {
-    const defaultContents: Record<string, Record<string, string>> = {
-      TERMS_AND_CONDITIONS: {
-        tr: `<h2>KULLANIM KOŞULLARI VE YASAL UYARI</h2>
+const trTerms = `<h2>KULLANIM KOŞULLARI VE YASAL UYARI</h2>
 <p><strong>Son Güncelleme Tarihi:</strong> 3 Eylül 2026</p>
 <p>İşbu Kullanım Koşulları ("Koşullar"), <strong>Which Win Horse Race Analiz Programı</strong> ("Program") tarafından sunulan dijital hizmetlerin kullanımına ilişkin usul ve esasları düzenlemektedir. Program’ı indirerek, yükleyerek veya herhangi bir şekilde kullanarak, işbu koşulları eksiksiz olarak kabul etmiş sayıldığınızı beyan edersiniz.</p>
 <h3>1. Taraflar ve Kapsam</h3>
@@ -52,8 +21,9 @@ const getByType = async (type: string, lang: string = 'en') => {
 <p>Hizmet Sağlayıcı, sunucu kesintileri, telekomünikasyon altyapısından kaynaklanan aksaklıklar, veri güncellemelerindeki gecikmeler veya üçüncü taraf kaynaklı bilgi hatalarından sorumlu tutulamaz. Program "olduğu gibi" sunulmakta olup, kesintisiz veya hatasız çalışacağına dair herhangi bir garanti verilmemektedir.</p>
 <h3>6. İletişim ve Resmi Bildirimler</h3>
 <p>İşbu Koşullar veya Program’ına ilişkin her türlü soru, talep ve bildirimleriniz için resmi iletişim kanallarımız üzerinden bizimle irtibata geçebilirsiniz:</p>
-<p>• <strong>Web Adresi:</strong> www.whichwin-horserace.com<br/>• <strong>E-posta Adresi:</strong> info@whichwin-horserace.com</p>`,
-        en: `<h2>TERMS OF USE AND LEGAL DISCLAIMER</h2>
+<p>• <strong>Web Adresi:</strong> www.whichwin-horserace.com<br/>• <strong>E-posta Adresi:</strong> info@whichwin-horserace.com</p>`;
+
+const enTerms = `<h2>TERMS OF USE AND LEGAL DISCLAIMER</h2>
 <p><strong>Last Updated:</strong> September 3, 2026</p>
 <p>These Terms of Use ("Terms") govern the procedures and principles regarding the use of digital services provided by the <strong>Which Win Horse Race Analysis Program</strong> ("Program"). By downloading, installing, or in any way using the Program, you declare that you accept these terms in full.</p>
 <h3>1. Parties and Scope</h3>
@@ -73,44 +43,117 @@ const getByType = async (type: string, lang: string = 'en') => {
 <p>The Service Provider cannot be held responsible for server downtime, telecommunications infrastructure disruptions, data update delays, or information errors originating from third parties. The Program is provided "as is", and no warranty is made that it will operate without interruption or error.</p>
 <h3>6. Contact and Official Notices</h3>
 <p>For any questions, requests, or notifications regarding these Terms or the Program, you may contact us via our official communication channels:</p>
-<p>• <strong>Website:</strong> www.whichwin-horserace.com<br/>• <strong>Email:</strong> info@whichwin-horserace.com</p>`,
-      },
-      PRIVACY_POLICY: {
-        tr: `<h2>GİZLİLİK POLİTİKASI VE YASAL UYARI</h2>
+<p>• <strong>Website:</strong> www.whichwin-horserace.com<br/>• <strong>Email:</strong> info@whichwin-horserace.com</p>`;
+
+const trPrivacy = `<h2>GİZLİLİK POLİTİKASI VE YASAL UYARI</h2>
 <p><strong>Son Güncelleme Tarihi:</strong> 3 Eylül 2026</p>
 <h3>Gizlilik Sözleşmesi</h3>
 <p>Which Win Horse Race Analiz Programı, bir bahis programı değildir ve sunulan tüm içerikler, tamamen yasal sınırlar içinde gerçekleştirilen istatistiksel tahmin ve analiz uygulamalarıdır. Tüm analizler, atların form durumu, derece geçmişleri ve pist koşulları gibi çevresel faktörler göz önünde bulundurularak yapılmaktadır. Hiçbir yasadışı paylaşım ve yasadışı bahis sitesi reklamı yapılmamaktadır. Kişisel verileriniz, ilgili kişinin rızası olmaksızın üçüncü taraflar ve tüzel kişilerle paylaşılamaz ve işlenemez.</p>
 <h3>Gizlilik Politikası</h3>
 <p>Which Win Horse Race Analiz Programı, bir bahis programı değildir ve sunulan tüm içerikler, tamamen yasal sınırlar içinde gerçekleştirilen tahmin ve analiz uygulamalarıdır. Tüm değerlendirmeler, atların performans durumları ve çevresel faktörler göz önünde bulundurularak yapılmaktadır. Hiçbir yasadışı paylaşım ve yasadışı bahis sitesi reklamı yapılmamaktadır. Kişisel verileriniz, ilgili kişinin rızası olmaksızın üçüncü taraflar ve tüzel kişilerle paylaşılamaz ve işlenemez.</p>
 <h3>İletişim Bilgileri</h3>
-<p>• <strong>Web Adresi:</strong> www.whichwin-horserace.com<br/>• <strong>E-posta Adresi:</strong> info@whichwin-horserace.com</p>`,
-        en: `<h2>PRIVACY POLICY AND LEGAL DISCLAIMER</h2>
+<p>• <strong>Web Adresi:</strong> www.whichwin-horserace.com<br/>• <strong>E-posta Adresi:</strong> info@whichwin-horserace.com</p>`;
+
+const enPrivacy = `<h2>PRIVACY POLICY AND LEGAL DISCLAIMER</h2>
 <p><strong>Last Updated:</strong> September 3, 2026</p>
 <h3>Privacy Agreement</h3>
 <p>Which Win Horse Race Analysis Program is not a betting program, and all provided content consists entirely of statistical prediction and analysis applications conducted within legal boundaries. All analyses are performed taking into account environmental factors such as horses' form status, rating history, and track conditions. No illegal content sharing or advertising of illegal betting sites is conducted. Your personal data cannot be shared with or processed by third parties or legal entities without the explicit consent of the person concerned.</p>
 <h3>Privacy Policy</h3>
 <p>Which Win Horse Race Analysis Program is not a betting program, and all provided content consists entirely of prediction and analysis applications conducted within legal boundaries. All evaluations are performed taking into account horses' performance status and environmental factors. No illegal content sharing or advertising of illegal betting sites is conducted. Your personal data cannot be shared with or processed by third parties or legal entities without the explicit consent of the person concerned.</p>
 <h3>Contact Information</h3>
-<p>• <strong>Website:</strong> www.whichwin-horserace.com<br/>• <strong>Email:</strong> info@whichwin-horserace.com</p>`,
-      },
-      ABOUT_US: {
-        tr: "<h1>Hakkımızda</h1><p>Which Win, yapay zeka destekli at yarışı analiz ve tahmin platformudur.</p>",
-        en: "<h1>About Us</h1><p>Which Win is your premier horse racing analysis and AI prediction platform.</p>"
-      }
-    };
+<p>• <strong>Website:</strong> www.whichwin-horserace.com<br/>• <strong>Email:</strong> info@whichwin-horserace.com</p>`;
 
-    const selectedCategory = defaultContents[baseType];
-    if (selectedCategory) {
-      const contentToUse = selectedCategory[lang] || selectedCategory['en'];
+const trAbout = `<h2>Hakkımızda</h2>
+<p>Which Win, yapay zeka destekli at yarışı analiz, istatistik ve tahmin platformudur. En güncel yarış verileri, jokey ve antrenör performansları ile detaylı analizler sunar.</p>
+<h3>İletişim</h3>
+<p>• <strong>Web Adresi:</strong> www.whichwin-horserace.com<br/>• <strong>E-posta:</strong> info@whichwin-horserace.com</p>`;
+
+const enAbout = `<h2>About Us</h2>
+<p>Which Win is your premier AI-powered horse racing analysis, statistics, and prediction platform. We provide up-to-date race data, jockey and trainer performance metrics, and detailed analytics.</p>
+<h3>Contact</h3>
+<p>• <strong>Website:</strong> www.whichwin-horserace.com<br/>• <strong>Email:</strong> info@whichwin-horserace.com</p>`;
+
+const defaultContents: Record<string, Record<string, string>> = {
+  TERMS_AND_CONDITIONS: {
+    tr: trTerms,
+    en: enTerms,
+  },
+  PRIVACY_POLICY: {
+    tr: trPrivacy,
+    en: enPrivacy,
+  },
+  ABOUT_US: {
+    tr: trAbout,
+    en: enAbout,
+  },
+};
+
+const createOrUpdate = async (type: string, content: string) => {
+  const result = await prisma.legalDocument.upsert({
+    where: { type },
+    update: { content },
+    create: { type, content },
+  });
+  return result;
+};
+
+const getByType = async (type: string, lang: string = 'en') => {
+  const upperType = type.toUpperCase();
+  const isTerms = upperType.includes('TERM');
+  const isPrivacy = upperType.includes('PRIVACY');
+  const isAbout = upperType.includes('ABOUT');
+
+  const baseType = isTerms ? 'TERMS_AND_CONDITIONS' : isPrivacy ? 'PRIVACY_POLICY' : isAbout ? 'ABOUT_US' : upperType;
+  const normalizedLang = lang.toLowerCase().startsWith('tr') ? 'tr' : 'en';
+  const localizedKey = `${baseType}_${normalizedLang.toUpperCase()}`;
+
+  // 1. Try to find the exact localized key first
+  let result = await prisma.legalDocument.findFirst({
+    where: { type: localizedKey },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  // 2. Check if content is empty or legacy stub (< 200 chars or containing "Welcome to GoldenTak")
+  const isLegacyStub = (content?: string | null) => {
+    if (!content || content.trim().length < 200) return true;
+    if (content.includes('Welcome to GoldenTak') || content.includes('Welcome to Which Win')) return content.trim().length < 300;
+    return false;
+  };
+
+  const defaultCategory = defaultContents[baseType];
+  const officialContent = defaultCategory ? (defaultCategory[normalizedLang] || defaultCategory['en']) : null;
+
+  if (!result || isLegacyStub(result.content)) {
+    if (officialContent) {
       result = await prisma.legalDocument.upsert({
         where: { type: localizedKey },
-        update: { content: contentToUse },
-        create: { type: localizedKey, content: contentToUse }
+        update: { content: officialContent },
+        create: { type: localizedKey, content: officialContent },
+      });
+      // Also sync baseType if needed
+      try {
+        await prisma.legalDocument.upsert({
+          where: { type: baseType },
+          update: { content: officialContent },
+          create: { type: baseType, content: officialContent },
+        });
+      } catch (_) {}
+    } else {
+      // Fallback to baseType
+      result = await prisma.legalDocument.findFirst({
+        where: { type: baseType },
+        orderBy: { updatedAt: 'desc' },
       });
     }
   }
 
-  if (!result) throw new ApiError(404, 'Document not found');
+  if (!result) {
+    if (officialContent) {
+      return { id: localizedKey, type: localizedKey, content: officialContent, createdAt: new Date(), updatedAt: new Date() };
+    }
+    throw new ApiError(404, 'Document not found');
+  }
+
   return result;
 };
 
