@@ -9,7 +9,6 @@ import { RaceRouter } from "../modules/race/race.route.js";
 import { HorseRouter } from "../modules/horse/horse.route.js";
 import { SubscriptionRouter } from "../modules/subscription/subscription.route.js";
 import { LanguageRouter } from "../modules/language/language.route.js";
-import { RatingRoutes } from "../modules/rating/rating.route.js";
 import { JockeyRouter } from "../modules/jockey/jockey.route.js";
 import { OddsRouter } from "../modules/odds/odds.route.js";
 
@@ -26,7 +25,6 @@ const moduleRoutes = [
   { path: "/horse", route: HorseRouter },
   { path: "/subscription", route: SubscriptionRouter },
   { path: "/language", route: LanguageRouter },
-  { path: "/rating", route: RatingRoutes },
   { path: "/jockey", route: JockeyRouter },
   { path: "/odds", route: OddsRouter },
 ];
