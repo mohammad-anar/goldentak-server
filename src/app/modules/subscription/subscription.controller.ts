@@ -40,7 +40,7 @@ const getMySubscriptionStatus = catchAsync(async (req: Request, res: Response) =
 // ─────────────────────────────────────────────────────────────────────────────
 
 const verifyGoogleSubscription = catchAsync(async (req: Request, res: Response) => {
-  const { deviceId, productId, purchaseToken } = req.body;
+  const { deviceId, productId, purchaseToken, planId } = req.body;
   if (!deviceId || !productId || !purchaseToken) {
     return res.status(StatusCodes.BAD_REQUEST).json({
       success: false,
@@ -48,7 +48,7 @@ const verifyGoogleSubscription = catchAsync(async (req: Request, res: Response) 
     });
   }
 
-  const result = await SubscriptionService.verifyGoogleSubscription(deviceId, productId, purchaseToken);
+  const result = await SubscriptionService.verifyGoogleSubscription(deviceId, productId, purchaseToken, planId);
   sendResponse(res, {
     statusCode: StatusCodes.OK,
     success: true,

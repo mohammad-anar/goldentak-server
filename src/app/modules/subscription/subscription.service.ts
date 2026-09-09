@@ -8,9 +8,10 @@ import {
 } from "../../../helpers/purchaseVerification.js";
 import jwt from "jsonwebtoken";
 
-// Helper to map Store Product IDs to Database Plans
-const mapProductIdToPlan = (productId: string): string => {
-  const lower = productId.toLowerCase();
+// Helper to map Store Product IDs or Base Plan IDs to Database Plans
+const mapProductIdToPlan = (productIdOrPlanId?: string): string => {
+  if (!productIdOrPlanId) return "WEEKLY";
+  const lower = productIdOrPlanId.toLowerCase();
   if (lower.includes("yearly") || lower.includes("year")) return "YEARLY";
   if (lower.includes("monthly") || lower.includes("month")) return "MONTHLY";
   return "WEEKLY";
@@ -184,10 +185,15 @@ const getSubscriptionOverview = async () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GOOGLE PLAY SUBSCRIPTION VERIFICATION & WEBHOOKS
 // ─────────────────────────────────────────────────────────────────────────────
-const verifyGoogleSubscription = async (deviceId: string, productId: string, purchaseToken: string) => {
-  console.log(`[GoogleVerify] Request received: deviceId=${deviceId}, productId=${productId}`);
+const verifyGoogleSubscription = async (
+  deviceId: string,
+  productId: string,
+  purchaseToken: string,
+  planId?: string
+) => {
+  console.log(`[GoogleVerify] Request received: deviceId=${deviceId}, productId=${productId}, planId=${planId}`);
   
-  // 1. Verify with Google Developer API
+  // 1. Verify with Google Developer API (Supports v2 basePlanId & auto-acknowledgement)
   const verification = await googleVerifier(productId, purchaseToken);
   if (!verification.success) {
     throw new Error("Google Play subscription verification failed or has expired");
@@ -209,7 +215,9 @@ const verifyGoogleSubscription = async (deviceId: string, productId: string, pur
     });
   }
 
-  const plan = mapProductIdToPlan(productId);
+  // Determine plan from verification.basePlanId or planId passed from client, or fallback to productId
+  const rawPlanIdentifier = verification.basePlanId || planId || productId;
+  const plan = mapProductIdToPlan(rawPlanIdentifier);
   const startDate = new Date();
   const endDate = new Date(verification.expiryTimeMillis);
 
@@ -243,29 +251,38 @@ const verifyGoogleSubscription = async (deviceId: string, productId: string, pur
 const handleGoogleWebhook = async (pubSubMessage: any) => {
   try {
     const dataBase64 = pubSubMessage?.data;
-    if (!dataBase64) throw new Error("Missing PubSub message data");
+    if (!dataBase64) {
+      console.log("[GoogleWebhook] Received ping or empty PubSub message without data, acknowledging.");
+      return { success: true };
+    }
 
-    const decodedString = Buffer.from(dataBase64, "base64").toString("utf-8");
-    const payload = JSON.parse(decodedString);
+    let decodedString = "";
+    let payload: any = null;
+    try {
+      decodedString = Buffer.from(dataBase64, "base64").toString("utf-8");
+      payload = JSON.parse(decodedString);
+    } catch (parseErr: any) {
+      console.log("[GoogleWebhook] PubSub message is not JSON (e.g. test ping):", decodedString);
+      return { success: true };
+    }
+
     console.log("[GoogleWebhook] Decoded PubSub Payload:", JSON.stringify(payload));
 
     const notification = payload?.subscriptionNotification;
     if (!notification) {
-      console.log("[GoogleWebhook] Not a subscription notification, skipping.");
+      console.log("[GoogleWebhook] Not a subscription notification (e.g. test ping), skipping.");
       return { success: true };
     }
 
     const { purchaseToken, subscriptionId: productId, notificationType } = notification;
     if (!purchaseToken || !productId) {
-      throw new Error("Missing required notification parameters");
+      console.warn("[GoogleWebhook] Missing required notification parameters, acknowledging.");
+      return { success: true };
     }
 
     console.log(`[GoogleWebhook] Processing notificationType=${notificationType} for product=${productId}`);
 
-    // Call google publisher API to get latest state
-    const verification = await googleVerifier(productId, purchaseToken);
-
-    // Find subscription in our DB
+    // Find subscription in our DB first
     const existingSub = await prisma.subscription.findUnique({
       where: { googlePurchaseToken: purchaseToken },
       include: { user: true }
@@ -273,10 +290,15 @@ const handleGoogleWebhook = async (pubSubMessage: any) => {
 
     if (!existingSub) {
       console.warn(`[GoogleWebhook] No subscription found in DB matching purchaseToken: ${purchaseToken}`);
-      return { success: false, message: "Subscription not found" };
+      return { success: true, message: "Subscription not found" };
     }
 
-    const plan = mapProductIdToPlan(productId);
+    // Call google publisher API to get latest state
+    const verification = await googleVerifier(productId, purchaseToken);
+
+    // If basePlanId was returned from v2, use it; otherwise preserve existing plan so renewals don't downgrade
+    const rawPlanIdentifier = verification.basePlanId || existingSub.plan;
+    const plan = mapProductIdToPlan(rawPlanIdentifier);
     const newEndDate = new Date(verification.expiryTimeMillis);
     const isActive = verification.success;
 
@@ -290,7 +312,7 @@ const handleGoogleWebhook = async (pubSubMessage: any) => {
       }
     });
 
-    console.log(`[GoogleWebhook] Updated subscription for user ${existingSub.userId}: isActive=${isActive}, expires=${newEndDate}`);
+    console.log(`[GoogleWebhook] Updated subscription for user ${existingSub.userId}: plan=${plan}, isActive=${isActive}, expires=${newEndDate}`);
 
     // Trigger notification if status changed
     if (!existingSub.isActive && isActive) {
@@ -302,7 +324,8 @@ const handleGoogleWebhook = async (pubSubMessage: any) => {
     return { success: true };
   } catch (err: any) {
     console.error("[GoogleWebhook] Error handling webhook event:", err.message);
-    throw err;
+    // Return 200 with error info to avoid endless Pub/Sub retry loops
+    return { success: false, error: err.message };
   }
 };
 
@@ -446,7 +469,7 @@ const handleAppleWebhook = async (signedPayload: string) => {
     return { success: true };
   } catch (err: any) {
     console.error("[AppleWebhook] Error processing App Store Connect webhook:", err.message);
-    throw err;
+    return { success: false, error: err.message };
   }
 };
 

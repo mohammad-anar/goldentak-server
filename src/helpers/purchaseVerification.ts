@@ -21,6 +21,7 @@ export interface GoogleVerificationResult {
   success: boolean;
   expiryTimeMillis: number;
   productId: string;
+  basePlanId?: string;
   autoRenewing: boolean;
   rawResponse: any;
 }
@@ -68,11 +69,65 @@ export const verifyGoogleSubscription = async (
       throw new Error("Failed to retrieve access token from Google");
     }
 
-    // 3. Query Google Play Developer API
     const packageName = "com.whichwin.horseracing";
-    const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/${productId}/tokens/${purchaseToken}`;
 
-    const verificationResponse = await axios.get(url, {
+    // Helper to auto-acknowledge Google Play subscription
+    const autoAcknowledge = async (targetProductId: string) => {
+      try {
+        const ackUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/${targetProductId}/tokens/${purchaseToken}:acknowledge`;
+        await axios.post(
+          ackUrl,
+          {},
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        console.log(`[GoogleVerify] Successfully acknowledged subscription for product: ${targetProductId}`);
+      } catch (ackErr: any) {
+        console.warn(`[GoogleVerify] Note: Acknowledge request returned: ${ackErr?.response?.data?.error?.message || ackErr.message}`);
+      }
+    };
+
+    // 3. Strategy A: Try Google Play Developer API Subscriptions v2 (Recommended for Base Plans)
+    try {
+      const v2Url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/${purchaseToken}`;
+      const v2Response = await axios.get(v2Url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      const v2Data = v2Response.data;
+      if (v2Data && v2Data.lineItems && v2Data.lineItems.length > 0) {
+        const lineItem = v2Data.lineItems[0];
+        const v2ProductId = lineItem.productId || productId;
+        const basePlanId = lineItem.offerDetails?.basePlanId || "";
+        const expiryTimeMillis = lineItem.expiryTime ? new Date(lineItem.expiryTime).getTime() : 0;
+        const subState = v2Data.subscriptionState; // SUBSCRIPTION_STATE_ACTIVE, SUBSCRIPTION_STATE_IN_GRACE_PERIOD
+
+        const isActive =
+          (subState === "SUBSCRIPTION_STATE_ACTIVE" || subState === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD") &&
+          expiryTimeMillis > Date.now();
+
+        // Auto-acknowledge if pending
+        if (v2Data.acknowledgementState !== "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED") {
+          await autoAcknowledge(v2ProductId);
+        }
+
+        console.log(`[GoogleVerify v2] Success. Product: ${v2ProductId}, BasePlan: ${basePlanId}, State: ${subState}, Expires: ${new Date(expiryTimeMillis).toISOString()}`);
+
+        return {
+          success: isActive,
+          expiryTimeMillis,
+          productId: v2ProductId,
+          basePlanId,
+          autoRenewing: lineItem.autoRenewingPlan !== undefined,
+          rawResponse: v2Data,
+        };
+      }
+    } catch (v2Err: any) {
+      console.warn(`[GoogleVerify] Subscriptions v2 query returned (${v2Err.message}). Falling back to v1 API.`);
+    }
+
+    // 4. Strategy B: Fallback to Google Play Developer API v1
+    const v1Url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/${productId}/tokens/${purchaseToken}`;
+    const verificationResponse = await axios.get(v1Url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -87,6 +142,11 @@ export const verifyGoogleSubscription = async (
         autoRenewing: false,
         rawResponse: data,
       };
+    }
+
+    // Auto-acknowledge if pending in v1 (acknowledgementState === 0)
+    if (data.acknowledgementState === 0) {
+      await autoAcknowledge(productId);
     }
 
     return {
@@ -238,12 +298,15 @@ export const verifyAppleSubscription = async (
     // ─────────────────────────────────────────────────────────────────────────
     if (decodedJws) {
       const expiresDate = Number(decodedJws.expiresDate || (Date.now() + 30 * 86400000));
+      const fallbackTxId = transactionId || `apple_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const safeOrigTxId = decodedJws.originalTransactionId || fallbackTxId;
+      const safeTxId = decodedJws.transactionId || fallbackTxId;
       return {
         success: !decodedJws.revocationDate && expiresDate > Date.now(),
         expiresDate,
         productId: decodedJws.productId || productId || "com.whichwin.horseracing.weekly",
-        originalTransactionId: decodedJws.originalTransactionId || transactionId || "apple_sub",
-        transactionId: decodedJws.transactionId || transactionId || "apple_sub",
+        originalTransactionId: safeOrigTxId,
+        transactionId: safeTxId,
         rawResponse: decodedJws,
       };
     }
@@ -348,12 +411,13 @@ const verifyAppleReceiptViaStoreKit1 = async (
         rawResponse: data,
       };
     } else if (data.receipt) {
+      const uniqueFallback = `apple_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       return {
         success: true,
         expiresDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
         productId: fallbackProductId || "com.whichwin.horseracing.weekly",
-        originalTransactionId: data.receipt.original_transaction_id || "apple_receipt",
-        transactionId: data.receipt.transaction_id || "apple_receipt",
+        originalTransactionId: data.receipt.original_transaction_id || uniqueFallback,
+        transactionId: data.receipt.transaction_id || uniqueFallback,
         rawResponse: data,
       };
     }
